@@ -8,6 +8,46 @@ import colorednoise
 import json
 
 
+def Signal_Noise_FFts(I0, B0, F_B, noise_95_fall, pink_percentage):
+    #   GENERATING VOLTAGE TIME DOMAIN    #
+    Time = np.arange(0, 1, dt)  # Starts at t=0 and ends at t=0.999s so it is repeating itself
+    n = np.size(Time)
+    delta_rho = rho_perp * AMRR  # [ohm * m]
+
+    Noise_var = noise_variance(noise_95_fall)
+
+    BB = B0 * np.sin(2 * pi * F_B * Time)
+    II = I0 * np.sin(2 * pi * F_c * Time)
+    hh = BB / B_k
+
+    Voltage = (II / thickness) * ((rho_perp + delta_rho - delta_rho * (hh ** 2)) * (LL / WW) + delta_rho * hh)
+
+    freq, fVolt = make_fft(Voltage, Time)
+
+    wNoise = np.random.normal(0, Noise_var, n)
+    # _, fwNoise = make_fft(wNoise, Time)
+    # _, S_wNoise = welch(wNoise, 1/dt, nperseg=n)
+
+    # Using filtering in DFT Domain
+    pNoise = make_pink_noise(Time, Noise_var)
+    # _, S_pNoise = welch(pNoise, 1/dt, nperseg=n)
+    # _, fpNoise = make_fft(pNoise, Time)
+
+    # Pink Using a library
+    # pNoise = colorednoise.powerlaw_psd_gaussian(1, n) * Noise_var
+
+    Noise = pink_percentage * pNoise + (1 - pink_percentage) * wNoise
+    # _, fNoise = make_fft(Noise, Time)
+
+
+    #   COMBINED SIGNAL   #
+    Signal = Noise + Voltage
+    _, fSignal = make_fft(Signal, Time)
+
+    return Signal, fSignal, Time, freq
+
+
+
 # Create a voltage signal from a PHE sensor
 #    CONSTS      #
 rho_perp = 2.7e-7 #[ohm * m]
@@ -59,7 +99,8 @@ for _ in range(2):
     # Pink Using a library
     # pNoise = colorednoise.powerlaw_psd_gaussian(1, n) * Noise_var
 
-    Noise = 1/2*(pNoise + wNoise)
+    pinkperc = 0.5
+    Noise = pinkperc * pNoise + (1 - pinkperc) * wNoise
     fNoise = S_pNoise
 
 
@@ -92,7 +133,8 @@ for _ in range(2):
     # Pink Using a library
     # pNoise = colorednoise.powerlaw_psd_gaussian(1, n) * Noise_var
 
-    Noise = 1/2*(pNoise + wNoise)
+    pinkperc = 0.5
+    Noise = pinkperc * pNoise + (1 - pinkperc) * wNoise
     _, fNoise = welch(Noise, 1/dt, nperseg=n)
 
 
