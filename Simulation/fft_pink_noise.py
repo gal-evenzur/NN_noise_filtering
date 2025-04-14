@@ -38,3 +38,62 @@ def make_pink_noise(t, sigma):
     pink_noise -= np.mean(pink_noise)
 
     return pink_noise
+
+
+def Signal_Noise_FFts(I0, B0, F_B, noise_strength, pink_percentage):
+    #I0 The current amplitude in the sensor[A]
+    #B0 = The magnetic field on the sensor [T]
+    #F_B  The magnetic field frequency [Hz]
+    #noise_strength = 2.5e-5  # Noise will be 95% of times in this +-range
+
+    # Create a voltage signal from a PHE sensor
+    #    CONSTS      #
+    rho_perp = 2.7e-7  # [ohm * m]
+    AMRR = 0.02  # AMR ratio (rho_par-rho_perp)/rho_perp
+    B_k = 10e-4  # [T] Difference of resistence for parallel B vs Perp B
+    # Isotope Field
+    thickness = 200e-9  # [m] of the actual magnetic layer
+    LL = 10e-6  # The misalignment[m]
+    WW = 600e-6  # The width of the sensor [m]
+    F_c = 2000  # The frequency of the current in the sensor [Hz]
+    pi = np.pi
+
+    #   GENERATING VOLTAGE TIME DOMAIN    #
+    dt = 1e-4
+    Time = np.arange(0, 1, dt)  # Starts at t=0 and ends at t=0.999s so it is repeating itself
+    n = np.size(Time)
+    delta_rho = rho_perp * AMRR  # [ohm * m]
+
+
+    BB = B0 * np.sin(2 * pi * F_B * Time)
+    II = I0 * np.sin(2 * pi * F_c * Time)
+    hh = BB / B_k
+
+    Voltage = (II / thickness) * ((rho_perp + delta_rho - delta_rho * (hh ** 2)) * (LL / WW) + delta_rho * hh)
+    freq, fVolt = make_fft(Voltage, Time)
+
+    #   CREATING NOISES     #
+    Noise_variance = noise_variance(noise_strength)
+
+    wNoise = np.random.normal(0, Noise_variance, n)
+    # _, fwNoise = make_fft(wNoise, Time)
+    # _, S_wNoise = welch(wNoise, 1/dt, nperseg=n)
+
+    # Using filtering in DFT Domain
+    pNoise = make_pink_noise(Time, Noise_variance)
+    # _, S_pNoise = welch(pNoise, 1/dt, nperseg=n)
+    # _, fpNoise = make_fft(pNoise, Time)
+
+    # Pink Using a library
+    # pNoise = colorednoise.powerlaw_psd_gaussian(1, n) * Noise_var
+
+    Noise = pink_percentage * pNoise + (1 - pink_percentage) * wNoise
+    # _, fNoise = make_fft(Noise, Time)
+
+
+    #   COMBINED SIGNAL   #
+    Signal = Noise + Voltage
+    _, fSignal = make_fft(Signal, Time)
+
+    return Signal, fSignal, Time, freq
+
