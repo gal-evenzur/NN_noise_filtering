@@ -95,5 +95,5 @@ def Signal_Noise_FFts(I0, B0, F_B, noise_strength, pink_percentage):
     Signal = Noise + Voltage
     _, fSignal = make_fft(Signal, Time)
 
-    return Signal, fSignal, Time, freq
+    return Voltage, fVolt, Signal, fSignal, Time, freq
 

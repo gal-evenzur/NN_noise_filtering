@@ -11,6 +11,8 @@ import json
 
 
 #   CREATING TRAIN NOISE + SIGNAL  #
+clear_sig = []
+clear_sig_f = []
 sig_time = []
 sig_f = []
 
@@ -26,19 +28,26 @@ for _ in range(n_trains):
     noise_strength = 2.5e-5
     noise_strength_r = noise_strength * normal(1, n_var(1))
     pink_percentage = 0.4 + normal(0.3, n_var(0.3))
-    Signal, fSignal, Time, freq = Signal_Noise_FFts(I0_r, abs(B0_r), F_B_r, noise_strength_r, pink_percentage)
+    Volt, fVolt, Signal, fSignal, Time, freq = Signal_Noise_FFts(I0_r, abs(B0_r), F_B_r, noise_strength_r, pink_percentage)
 
+    clear_sig.append(Volt.tolist())
+    clear_sig_f.append(fVolt.tolist())
     sig_time.append(Signal.tolist())
     sig_f.append(fSignal.tolist())
 
 train = {
+    "cSignal": clear_sig,
+    "f_cSignal": clear_sig_f,
     "signals": sig_time,
     "f_signals": sig_f,
 }
 
 #   CREATING TEST NOISE AND SIGNAL    #
+clear_sig = []
+clear_sig_f = []
 sig_time = []
 sig_f = []
+
 n_tests = 2
 for _ in range(n_tests):
     I0 = 50e-3  # The current amplitude in the sensor[A]
@@ -50,12 +59,16 @@ for _ in range(n_tests):
     noise_strength = 2.5e-5
     noise_strength_r = noise_strength * normal(1, n_var(1))
     pink_percentage = 0.4 + normal(0.3, n_var(0.3))
-    Signal, fSignal, Time, freq = Signal_Noise_FFts(I0_r, abs(B0_r), F_B_r, noise_strength_r, pink_percentage)
+    Volt, fVolt, Signal, fSignal, Time, freq = Signal_Noise_FFts(I0_r, abs(B0_r), F_B_r, noise_strength_r, pink_percentage)
 
+    clear_sig.append(Volt.tolist())
+    clear_sig_f.append(fVolt.tolist())
     sig_time.append(Signal.tolist())
     sig_f.append(fSignal.tolist())
 
 test = {
+    "cSignal": clear_sig,
+    "f_cSignal": clear_sig_f,
     "signals": sig_time,
     "f_signals": sig_f,
 }
