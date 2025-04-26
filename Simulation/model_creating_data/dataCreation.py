@@ -17,7 +17,7 @@ sig_time = []
 sig_f = []
 
 
-n_trains = 2
+n_trains = 200
 for _ in range(n_trains):
     I0 = 50e-3  # The current amplitude in the sensor[A]
     I0_r = normal(I0, n_var(I0 / 5))
@@ -25,10 +25,10 @@ for _ in range(n_trains):
     B0_r = B0 * normal(1, n_var(0.5)) * 10**(normal(0, n_var(2) ))
     F_B = 15  # The magnetic field frequency [Hz]
     F_B_r = normal(F_B, n_var(5))
-    noise_strength = 2.5e-5
-    noise_strength_r = noise_strength * normal(1, n_var(1))
+    noise_strength = 1e-5
+    noise_strength_r = noise_strength * (1 + normal(1, n_var(1)))
     pink_percentage = 0.4 + normal(0.3, n_var(0.3))
-    Volt, fVolt, Signal, fSignal, Time, freq = Signal_Noise_FFts(I0_r, abs(B0_r), F_B_r, noise_strength_r, pink_percentage)
+    Volt, fVolt, Signal, fSignal, Time, freq = Signal_Noise_FFts(I0_r, abs(B0_r), F_B_r, abs(noise_strength_r), pink_percentage)
 
     clear_sig.append(Volt.tolist())
     clear_sig_f.append(fVolt.tolist())
@@ -48,7 +48,7 @@ clear_sig_f = []
 sig_time = []
 sig_f = []
 
-n_tests = 2
+n_tests = 20
 for _ in range(n_tests):
     I0 = 50e-3  # The current amplitude in the sensor[A]
     I0_r = normal(I0, n_var(I0 / 4))
@@ -57,9 +57,9 @@ for _ in range(n_tests):
     F_B = 15  # The magnetic field frequency [Hz]
     F_B_r = normal(F_B, n_var(5))
     noise_strength = 2.5e-5
-    noise_strength_r = noise_strength * normal(1, n_var(1))
+    noise_strength_r = noise_strength * (1 + normal(1, n_var(1)))
     pink_percentage = 0.4 + normal(0.3, n_var(0.3))
-    Volt, fVolt, Signal, fSignal, Time, freq = Signal_Noise_FFts(I0_r, abs(B0_r), F_B_r, noise_strength_r, pink_percentage)
+    Volt, fVolt, Signal, fSignal, Time, freq = Signal_Noise_FFts(I0_r, abs(B0_r), F_B_r, abs(noise_strength_r), pink_percentage)
 
     clear_sig.append(Volt.tolist())
     clear_sig_f.append(fVolt.tolist())
