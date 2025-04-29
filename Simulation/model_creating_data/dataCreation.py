@@ -17,7 +17,7 @@ sig_time = []
 sig_f = []
 
 
-n_trains = 200
+n_trains = 1000
 for _ in range(n_trains):
     I0 = 50e-3  # The current amplitude in the sensor[A]
     I0_r = normal(I0, n_var(I0 / 5))
@@ -48,7 +48,7 @@ clear_sig_f = []
 sig_time = []
 sig_f = []
 
-n_tests = 20
+n_tests = 100
 for _ in range(n_tests):
     I0 = 50e-3  # The current amplitude in the sensor[A]
     I0_r = normal(I0, n_var(I0 / 4))

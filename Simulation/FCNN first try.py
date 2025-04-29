@@ -6,62 +6,97 @@ import torch.nn.functional as F
 from torch.optim import SGD
 
 import matplotlib.pyplot as plt
+import numpy as np
 
-def log_normlised_tensor(dat_raw):
+def scale_tensor(dat_raw, device):
     dat_raw = torch.FloatTensor(dat_raw)
-    dat_logscaled = torch.log1p(dat_raw)
-    dat_logscaled = dat_raw
-    mean = dat_logscaled.mean()
-    std = dat_logscaled.std()
+    min = dat_raw.amin(1)
+    max = dat_raw.amax(1)
+    # print(f"data is {dat_raw.shape} - {min.shape} / ({max.shape} - {min.shape} ")
 
-    dat_norm = (dat_logscaled - mean)/std
-    return dat_norm
+    dat_norm = (dat_raw - min[:, None])/(max[:, None] - min[:, None])
+    std = dat_norm.std(1)
+    dat_norm = dat_norm/std[:, None]
+    return dat_norm.to(device)
+
 
 # Structure for the NN: #
 class Noise_reductor(nn.Module):
-    def __init__    (self, f_signal=5001, h1=1000, clean_sig=5001):
+    def __init__(self, f_signal=5001, h1=1500, h2=1000, h3=750, h4=500, h5=250, h6=100, clean_sig=5001):
         super().__init__()
-        self.fc1 = nn.Linear(f_signal, h1)
-        self.out = nn.Linear(h1, clean_sig)
+
+        self.linear_relu_stack = nn.Sequential(
+          nn.Linear(f_signal, h1),
+          nn.Linear(h1, h2),
+          nn.Linear(h2, h3),
+          nn.Linear(h3, h4),
+          nn.Linear(h4, h5),
+          nn.Linear(h5, h6),
+          nn.Linear(h6, clean_sig), # output
+        )
+
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.out(x))
-
-        return x
+      logits = self.linear_relu_stack(x)
+      return logits
 
 # Now we want to train the parameters #
 # First, IMPORTING DATA #
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-with open("data.json", "r") as f:
+with open("/content/drive/MyDrive/Colab Notebooks/data.json", "r") as f:
     data = json.load(f)
 
 X_train_raw = data["train"]["f_signals"]
 Y_train_raw = data["train"]["f_cSignal"]
 
-X_test = data["test"]["f_signals"]
-Y_test = data["test"]["f_cSignal"]
+X_test_raw = data["test"]["f_signals"]
+Y_test_raw = data["test"]["f_cSignal"]
 
 # Turn into a torch tensor and then normalize it std=1, mean=0
-X_train = log_normlised_tensor(X_train_raw)
-Y_train = log_normlised_tensor(Y_train_raw)
+X_train = scale_tensor(X_train_raw, device)
+Y_train = scale_tensor(Y_train_raw, device)
 
-X_test = torch.FloatTensor(X_test)
-Y_test = torch.FloatTensor(Y_test)
+X_test = scale_tensor(X_test_raw, device)
+Y_test = scale_tensor(Y_test_raw,device)
 
 
 
 t = torch.FloatTensor(data["t"])
 f = torch.FloatTensor(data["f"])
 
+
+'''
+# Example of the scaled versions of the signals: #
+fig, sigPlot = plt.subplots(nrows=2, ncols=5)
+
+
+for i in range(5):
+    X_t_numpy = X_train[i].cpu().detach().numpy()
+    Y_t_numpy = Y_train[i].cpu().detach().numpy()
+
+    X_train_plot = X_t_numpy
+    Y_train_plot = Y_t_numpy
+
+
+    sigPlot[0][i].semilogy(f, X_train_plot, ".")
+    sigPlot[1][i].semilogy(f, Y_train_plot, "r.")
+
+    sigPlot[0][i].set_xlim(1950,2050)
+    sigPlot[0][i].set_ylim(0.00001,10)
+    sigPlot[1][i].set_xlim(1950,2050)
+    sigPlot[1][i].set_ylim(0.00001,10)
+
+plt.show()
+'''
+
 # TEST THROUGH NN #
-model = Noise_reductor()
+model = Noise_reductor().to(device)
 
-
-optimizer = SGD(model.parameters(), lr = 0.1)
+optimizer = SGD(model.parameters(), lr = 0.01)
 criterion = nn.MSELoss()
 
-epochs = 200
+epochs = 10000
 losses = []
 eps = []
 model.train()
@@ -74,8 +109,8 @@ for ep in range(epochs):
     # Keep Track of our losses
 
     # print every 10 epoch
-    if ep % 50 == 0:
-        losses.append(loss.detach().numpy())
+    if ep % 1000 == 0:
+        losses.append(loss.cpu().detach().numpy())
         eps.append(ep)
         # print(f'Epoch: {ep} and loss: {loss}')
 
@@ -95,22 +130,41 @@ plt.figure()
 plt.semilogy(eps, losses)
 
 
+plt.figure()
+plt.plot(eps, losses)
+
+
+n = 10
 #    PLOTTING THE FILTERING TO SEE IF IT WORKED   #
-fig, sigPlot = plt.subplots(nrows=2, ncols=5)
+fig, sigPlot = plt.subplots(nrows=1, ncols=n, figsize=(20,8))
 
-Y_pred = model(X_train)
+Y_pred = model(X_test)
 
-# Y_pred_plot = Y_pred + abs(Y_pred.min())
-# Y_train_plot = Y_train + abs(Y_train.min())
+start = 0
+for i_ in range(start,start+n):
 
-for i in range(5):
+    Y_p_numpy = Y_pred[i_].cpu().detach().numpy()
+    Y_t_numpy = Y_test[i_].cpu().detach().numpy()
 
-    Y_pred_plot = Y_pred[i].detach() + abs(Y_pred[i].detach().min())
-    Y_train_plot = Y_train[i].detach() + abs(Y_train[i].detach().min())
+    Y_pred_plot = Y_p_numpy
+    Y_train_plot = Y_t_numpy
+
+    i = i_%n
 
 
-    sigPlot[0][i].semilogy(f, Y_pred_plot, ".")
-    sigPlot[1][i].semilogy(f, Y_train_plot, "r.")
+    sigPlot[i].semilogy(f, Y_pred_plot, ".")
+    sigPlot[i].semilogy(f, Y_train_plot, "r.")
 
+    xbor = [1900, 2010]
+    # sigPlot[i].set_xlim(xbor[0],xbor[1])
+    # sigPlot[i].set_ylim(0.000001,10)
+    # sigPlot[i].set_xticks(np.linspace(xbor[0], xbor[1], 3))  # 11 ticks between 1950 and 2050
+    # sigPlot[1][i].set_xlim(xbor[0],xbor[1])
+    # sigPlot[1][i].set_ylim(0.00001,10)
 
+plt.tight_layout()
+
+p2 = plt.figure();
+plt.semilogy(X_train[0].cpu().detach().numpy())
 plt.show()
+
