@@ -1,14 +1,11 @@
 import math
 
 from numpy.random import normal as normal
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.signal import welch
 from fft_pink_noise import noise_variance as n_var
 from fft_pink_noise import *
-import colorednoise
 import json
 
+add_signals = False
 
 #   CREATING TRAIN NOISE + SIGNAL  #
 clear_sig = []
@@ -17,7 +14,7 @@ sig_time = []
 sig_f = []
 
 
-n_trains = 1000
+n_trains = 800
 for _ in range(n_trains):
     I0 = 50e-3  # The current amplitude in the sensor[A]
     I0_r = normal(I0, n_var(I0 / 5))
@@ -30,9 +27,10 @@ for _ in range(n_trains):
     pink_percentage = 0.4 + normal(0.3, n_var(0.3))
     Volt, fVolt, Signal, fSignal, Time, freq = Signal_Noise_FFts(I0_r, abs(B0_r), F_B_r, abs(noise_strength_r), pink_percentage)
 
-    clear_sig.append(Volt.tolist())
+    if add_signals:
+        clear_sig.append(Volt.tolist())
+        sig_time.append(Signal.tolist())
     clear_sig_f.append(fVolt.tolist())
-    sig_time.append(Signal.tolist())
     sig_f.append(fSignal.tolist())
 
 train = {
@@ -48,7 +46,7 @@ clear_sig_f = []
 sig_time = []
 sig_f = []
 
-n_tests = 100
+n_tests = 200
 for _ in range(n_tests):
     I0 = 50e-3  # The current amplitude in the sensor[A]
     I0_r = normal(I0, n_var(I0 / 4))
@@ -61,9 +59,10 @@ for _ in range(n_tests):
     pink_percentage = 0.4 + normal(0.3, n_var(0.3))
     Volt, fVolt, Signal, fSignal, Time, freq = Signal_Noise_FFts(I0_r, abs(B0_r), F_B_r, abs(noise_strength_r), pink_percentage)
 
-    clear_sig.append(Volt.tolist())
+    if add_signals:
+        clear_sig.append(Volt.tolist())
+        sig_time.append(Signal.tolist())
     clear_sig_f.append(fVolt.tolist())
-    sig_time.append(Signal.tolist())
     sig_f.append(fSignal.tolist())
 
 test = {

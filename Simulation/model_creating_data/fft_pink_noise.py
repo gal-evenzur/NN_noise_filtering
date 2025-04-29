@@ -59,7 +59,7 @@ def Signal_Noise_FFts(I0, B0, F_B, noise_strength, pink_percentage):
     pi = np.pi
 
     #   GENERATING VOLTAGE TIME DOMAIN    #
-    dt = 0.5e-4
+    dt = 1e-4
     Time = np.arange(0, 1, dt)  # Starts at t=0 and ends at t=0.999s so it is repeating itself
     n = np.size(Time)
     delta_rho = rho_perp * AMRR  # [ohm * m]

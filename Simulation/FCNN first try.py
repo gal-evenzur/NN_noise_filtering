@@ -19,6 +19,7 @@ def scale_tensor(dat_raw, device):
     dat_norm = dat_norm/std[:, None]
     return dat_norm.to(device)
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Structure for the NN: #
 class Noise_reductor(nn.Module):
@@ -42,9 +43,8 @@ class Noise_reductor(nn.Module):
 
 # Now we want to train the parameters #
 # First, IMPORTING DATA #
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-with open("/content/drive/MyDrive/Colab Notebooks/data.json", "r") as f:
+with open("model_creating_data/data.json", "r") as f:
     data = json.load(f)
 
 X_train_raw = data["train"]["f_signals"]
@@ -93,10 +93,10 @@ plt.show()
 # TEST THROUGH NN #
 model = Noise_reductor().to(device)
 
-optimizer = SGD(model.parameters(), lr = 0.01)
+optimizer = SGD(model.parameters(), lr = 0.1)
 criterion = nn.MSELoss()
 
-epochs = 10000
+epochs = 1000
 losses = []
 eps = []
 model.train()
@@ -109,7 +109,7 @@ for ep in range(epochs):
     # Keep Track of our losses
 
     # print every 10 epoch
-    if ep % 1000 == 0:
+    if ep % (epochs/10) == 0:
         losses.append(loss.cpu().detach().numpy())
         eps.append(ep)
         # print(f'Epoch: {ep} and loss: {loss}')
@@ -126,9 +126,6 @@ for ep in range(epochs):
     optimizer.step()
 
 
-plt.figure()
-plt.semilogy(eps, losses)
-
 
 plt.figure()
 plt.plot(eps, losses)
@@ -136,7 +133,7 @@ plt.plot(eps, losses)
 
 n = 10
 #    PLOTTING THE FILTERING TO SEE IF IT WORKED   #
-fig, sigPlot = plt.subplots(nrows=1, ncols=n, figsize=(20,8))
+fig, sigPlot = plt.subplots(nrows=2, ncols=n)
 
 Y_pred = model(X_test)
 
@@ -145,6 +142,7 @@ for i_ in range(start,start+n):
 
     Y_p_numpy = Y_pred[i_].cpu().detach().numpy()
     Y_t_numpy = Y_test[i_].cpu().detach().numpy()
+    X_t_numpy = X_test[i_].cpu().detach().numpy()
 
     Y_pred_plot = Y_p_numpy
     Y_train_plot = Y_t_numpy
@@ -152,19 +150,15 @@ for i_ in range(start,start+n):
     i = i_%n
 
 
-    sigPlot[i].semilogy(f, Y_pred_plot, ".")
-    sigPlot[i].semilogy(f, Y_train_plot, "r.")
+    sigPlot[0][i].semilogy(f, Y_pred_plot, ".")
+    sigPlot[0][i].semilogy(f, Y_train_plot, "r.")
+    sigPlot[1][i].semilogy(f, X_t_numpy, "*")
 
-    xbor = [1900, 2010]
-    # sigPlot[i].set_xlim(xbor[0],xbor[1])
-    # sigPlot[i].set_ylim(0.000001,10)
-    # sigPlot[i].set_xticks(np.linspace(xbor[0], xbor[1], 3))  # 11 ticks between 1950 and 2050
-    # sigPlot[1][i].set_xlim(xbor[0],xbor[1])
-    # sigPlot[1][i].set_ylim(0.00001,10)
+
+    xbor = [1970, 2030]
+    sigPlot[0][i].set_xlim(xbor[0],xbor[1])
+    sigPlot[0][i].set_ylim(0.000001,10)
+    sigPlot[0][i].set_xticks(np.linspace(xbor[0], xbor[1], 3))  # 11 ticks between 1950 and 2050
 
 plt.tight_layout()
-
-p2 = plt.figure();
-plt.semilogy(X_train[0].cpu().detach().numpy())
 plt.show()
-
