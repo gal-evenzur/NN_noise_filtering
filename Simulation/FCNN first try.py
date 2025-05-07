@@ -1,9 +1,14 @@
+# %% IMPORTS #
+
 import torch
 import json
 import torch.nn as nn
 import torch.nn.functional as F
 # optim contains many optimizers. Here, we're using SGD, stochastic gradient descent.
 from torch.optim import SGD
+
+import matplotlib
+matplotlib.use('TkAgg')  # or 'Agg' for testing headless
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -21,28 +26,29 @@ def scale_tensor(dat_raw, device):
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Structure for the NN: #
+
+# %% Structure for the NN: #
 class Noise_reductor(nn.Module):
-    def __init__(self, f_signal=5001, h1=1500, h2=1000, h3=750, h4=500, h5=250, h6=100, clean_sig=5001):
+    def __init__(self, f_signal=5001, h1=1500, h2=1000, h3=750, h4=500, h5=250, h6=100):
         super().__init__()
 
-        self.linear_relu_stack = nn.Sequential(
+        self.linear_stack = nn.Sequential(
           nn.Linear(f_signal, h1),
           nn.Linear(h1, h2),
           nn.Linear(h2, h3),
-          nn.Linear(h3, h4),
-          nn.Linear(h4, h5),
-          nn.Linear(h5, h6),
-          nn.Linear(h6, clean_sig), # output
+          nn.Linear(h3, h6),
+          nn.Linear(h6, f_signal), # output
         )
 
 
     def forward(self, x):
-      logits = self.linear_relu_stack(x)
+      logits = self.linear_stack(x)
       return logits
 
+
+
 # Now we want to train the parameters #
-# First, IMPORTING DATA #
+# %% First, IMPORTING DATA #
 
 with open("model_creating_data/data.json", "r") as f:
     data = json.load(f)
@@ -90,13 +96,13 @@ for i in range(5):
 plt.show()
 '''
 
-# TEST THROUGH NN #
+# %% TEST THROUGH NN #
 model = Noise_reductor().to(device)
 
-optimizer = SGD(model.parameters(), lr = 0.1)
+optimizer = SGD(model.parameters(), lr = 0.01)
 criterion = nn.MSELoss()
 
-epochs = 1000
+epochs = 3500
 losses = []
 eps = []
 model.train()
@@ -125,19 +131,18 @@ for ep in range(epochs):
     loss.backward()
     optimizer.step()
 
-
+# %%   PLOTTING THE FILTERING TO SEE IF IT WORKED   #
 
 plt.figure()
-plt.plot(eps, losses)
+plt.semilogy(eps, losses)
 
 
 n = 10
-#    PLOTTING THE FILTERING TO SEE IF IT WORKED   #
 fig, sigPlot = plt.subplots(nrows=2, ncols=n)
 
 Y_pred = model(X_test)
 
-start = 0
+start = 10
 for i_ in range(start,start+n):
 
     Y_p_numpy = Y_pred[i_].cpu().detach().numpy()
@@ -155,7 +160,7 @@ for i_ in range(start,start+n):
     sigPlot[1][i].semilogy(f, X_t_numpy, "*")
 
 
-    xbor = [1970, 2030]
+    xbor = [1000, 3000]
     sigPlot[0][i].set_xlim(xbor[0],xbor[1])
     sigPlot[0][i].set_ylim(0.000001,10)
     sigPlot[0][i].set_xticks(np.linspace(xbor[0], xbor[1], 3))  # 11 ticks between 1950 and 2050
