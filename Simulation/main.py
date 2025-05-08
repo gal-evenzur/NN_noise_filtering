@@ -107,7 +107,7 @@ plt.show()
 losses = []
 eps = []
 model = Noise_reductor().to(device)
-def train(epochs, optim=SGD, device="cpu", rate = 0.01):
+def train(epochs, optim=SGD, device="cpu", rate = 0.001):
     optimizer = optim(model.parameters(), lr = rate)
     criterion = nn.MSELoss()
     model.train()
@@ -131,11 +131,11 @@ def train(epochs, optim=SGD, device="cpu", rate = 0.01):
                                   ## ALSO NOTE: Alternatively, we can zero out the gradient with model.zero_grad().
             loss.backward()
             optimizer.step()
-        if loss.detach() < 5*10**-7:
+        if loss.detach() < 10**-10:
             break
 
             # Keep Track of our losses
-        if ep % (epochs/100) == 0:
+        if ep % (epochs/300) == 0:
             losses.append(loss.cpu().detach().numpy())
             eps.append(ep)
 
@@ -148,10 +148,23 @@ if __name__ == "__main__":
 
 plt.figure()
 plt.semilogy(eps, losses)
-
+plt.title("Loss vs. Epochs")
+plt.xlabel("Epochs")
+plt.ylabel("Loss")
 
 n = 10
 fig, sigPlot = plt.subplots(nrows=2, ncols=n,  figsize=(3*n,6))
+fig.text(0.6, 0.01, 'f [Hz]', ha='center', fontsize=12)
+fig.text(0.01, 0.5, 'FFT', ha='center', rotation='vertical', fontsize=12)
+import matplotlib.lines as mlines
+
+# Create proxy artists
+data_handle = mlines.Line2D([], [], color='red', marker='.', linestyle='None', label='Data')
+pred_handle = mlines.Line2D([], [], color='blue', marker='*', linestyle='None', label='Prediction')
+
+# Add a figure-level legend
+fig.legend(handles=[pred_handle, data_handle],
+           loc='upper center', ncol=3, fontsize=10, frameon=False)
 
 f = testSet.get_freqs()
 
@@ -172,15 +185,17 @@ for i_ in range(start,start+n):
 
 
 
-    sigPlot[0][i].semilogy(f, Y_pred_plot, ".")
+    sigPlot[0][i].semilogy(f, Y_pred_plot, "*")
     sigPlot[0][i].semilogy(f, Y_train_plot, "r.")
     sigPlot[1][i].semilogy(f, X_t_numpy, "*")
 
+    # Add a title (number) to each column's top subplot
+    sigPlot[0][i].set_title(i)
 
-    xbor = [1000, 3000]
+    xbor = [1970, 2030]
     sigPlot[0][i].set_xlim(xbor[0],xbor[1])
-    sigPlot[0][i].set_xticks(np.linspace(xbor[0], xbor[1], 3))  # 11 ticks between 1950 and 2050
-    sigPlot[0][i].set_xticks(np.linspace(xbor[0], xbor[1], 3))  # 11 ticks between 1950 and 2050
+    sigPlot[0][i].set_xticks(np.linspace(xbor[0], xbor[1], 5))  # 11 ticks between 1950 and 2050
+    sigPlot[0][i].set_xticklabels([f"{xbor[0]:.0f}", "", "", "", f"{xbor[1]:.0f}"])
 
-plt.tight_layout()
+plt.tight_layout(rect=[0.03, 0.03, 1, 0.88])
 plt.show()
