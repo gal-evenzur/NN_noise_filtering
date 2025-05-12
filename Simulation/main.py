@@ -1,12 +1,12 @@
 # %% IMPORTS #
+import json
 
 import torch
-import json
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
-import torch.nn.functional as F
-# optim contains many optimizers. Here, we're using SGD, stochastic gradient descent..
 from torch.optim import SGD, Adam
+from ignite.engine import Engine, Events
+from ignite.contrib.handlers import ProgressBar
 
 import matplotlib
 matplotlib.use('TkAgg')  # or 'Agg' for testing headless
@@ -72,8 +72,6 @@ class SignalDataset(Dataset):
         return self.f
 
 
-
-# Now we want to train the parameters #
 # %% First, IMPORTING DATA #
 
 trainSet = SignalDataset('model_creating_data/data.json')
@@ -102,47 +100,68 @@ for i in range(5):
 plt.show()
 '''
 
-# %% TRAIN THROUGH NN #
-
+# %% Defining training engine and Events  #
+# Here I Only intend to plot the losses graph so only need for basic event every 1/100 epochs
 losses = []
 eps = []
-model = Noise_reductor().to(device)
-def train(epochs, optim=SGD, device="cpu", rate = 0.001):
+model = Noise_reductor()
+def supervised_train(model, optim=SGD, device="cpu", rate = 0.0001):
+    model.to(device)
     optimizer = optim(model.parameters(), lr = rate)
     criterion = nn.MSELoss()
-    model.train()
-    for ep in range(epochs):
-        for i, (X_batch, Y_batch) in enumerate(dataloader):
-            X = X_batch.to(device)
-            Y = Y_batch.to(device)
+    losses = []
+    eps = []
+
+    def _update(engine, batch):
+        model.train()
+        optimizer.zero_grad()  ## This zeroes out the gradient stored in "model".
+        X_batch, Y_batch = batch
+        X, Y = X_batch.to(device), Y_batch.to(device)
+        Y_pred = model(X)
+        # Measure the loss/error, gonna be high at first
+        loss = criterion(Y_pred, Y)  # predicted values vs the y_train
+        loss.backward()
+        optimizer.step()
+        return loss.item()
+
+    return Engine(_update)
+
+# Not really relevent for now and not used
+def supervised_evaluator(model, device="cpu"):
+
+    def _interference(engine, batch):
+        model.eval()
+        with torch.no_grad():
+            X_batch, Y_batch = batch
+            X, Y = X_batch.to(device), Y_batch.to(device)
             Y_pred = model(X)
 
-            # Measure the loss/error, gonna be high at first
-            loss = criterion(Y_pred, Y) # predicted values vs the y_train
+            return Y_pred, Y_batch
+    engine = Engine(_interference)
+    return engine
 
 
-            # Do some back propagation: take the error rate of forward propagation and feed it back
-            # thru the network to fine tune the weights
-            optimizer.zero_grad() ## This zeroes out the gradient stored in "model".
-                                  ## Remember, by default, gradients are added to the previous step (the gradients are accumulated),
-                                  ## and we took advantage of this process to calculate the derivative one data point at a time.
-                                  ## NOTE: "optimizer" has access to "model" because of how it was created with the call
-                                  ## (made earlier): optimizer = SGD(model.parameters(), lr=0.1).
-                                  ## ALSO NOTE: Alternatively, we can zero out the gradient with model.zero_grad().
-            loss.backward()
-            optimizer.step()
-        if loss.detach() < 10**-10:
-            break
+n_epochs = 2000
+trainer = supervised_train(model, Adam, device)
 
-            # Keep Track of our losses
-        if ep % (epochs/300) == 0:
-            losses.append(loss.cpu().detach().numpy())
-            eps.append(ep)
+@trainer.on(Events.ITERATION_COMPLETED(every=int(n_epochs / 100)))
+def log_training_loss(trainer):
+    losses.append(trainer.state.output)
+    eps.append(trainer.state.epoch)
 
+@trainer.on(Events.ITERATION_COMPLETED(every=int(n_epochs/50)))
+def early_stopping(trainer):
+    if trainer.state.output < 10**-8:
+        losses.append(trainer.state.output)
+        eps.append(trainer.state.epoch)
+        trainer.terminate()
 
+ProgressBar().attach(trainer, metric_names='all')
 
-if __name__ == "__main__":
-    train(2000, Adam, device)
+# %% Training NN and recording events
+# Will take some time
+trainer.run(dataloader, max_epochs=n_epochs)
+
 
 # %%   PLOTTING THE FILTERING TO SEE IF IT WORKED   #
 
@@ -153,6 +172,7 @@ plt.xlabel("Epochs")
 plt.ylabel("Loss")
 
 n = 10
+start = 0
 fig, sigPlot = plt.subplots(nrows=2, ncols=n,  figsize=(3*n,6))
 fig.text(0.6, 0.01, 'f [Hz]', ha='center', fontsize=12)
 fig.text(0.01, 0.5, 'FFT', ha='center', rotation='vertical', fontsize=12)
@@ -169,7 +189,6 @@ fig.legend(handles=[pred_handle, data_handle],
 f = testSet.get_freqs()
 
 
-start = 10
 for i_ in range(start,start+n):
     X_test,Y_test = testSet[i_]
     Y_pred = model(X_test.to(device))
@@ -192,10 +211,10 @@ for i_ in range(start,start+n):
     # Add a title (number) to each column's top subplot
     sigPlot[0][i].set_title(i)
 
-    xbor = [1970, 2030]
+    xbor = [1900, 2100]
     sigPlot[0][i].set_xlim(xbor[0],xbor[1])
-    sigPlot[0][i].set_xticks(np.linspace(xbor[0], xbor[1], 5))  # 11 ticks between 1950 and 2050
-    sigPlot[0][i].set_xticklabels([f"{xbor[0]:.0f}", "", "", "", f"{xbor[1]:.0f}"])
+#    sigPlot[0][i].set_xticks(np.linspace(xbor[0], xbor[1], 5))  # 11 ticks between 1950 and 2050
+#    sigPlot[0][i].set_xticklabels([f"{xbor[0]:.0f}", "", "", "", f"{xbor[1]:.0f}"])
 
 plt.tight_layout(rect=[0.03, 0.03, 1, 0.88])
 plt.show()
