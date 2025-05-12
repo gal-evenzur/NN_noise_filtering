@@ -25,8 +25,11 @@ class Noise_reductor(nn.Module):
 
         self.linear_stack = nn.Sequential(
             nn.Linear(f_signal, h1),
-            nn.Linear(h1, h3),
-            nn.Linear(h3, h6),
+            nn.Linear(h1, h2),
+            nn.Linear(h2, h3),
+            nn.Linear(h3, h4),
+            nn.Linear(h4, h5),
+            nn.Linear(h5, h6),
             nn.Linear(h6, f_signal), # output
         )
 
@@ -105,7 +108,7 @@ plt.show()
 losses = []
 eps = []
 model = Noise_reductor()
-def supervised_train(model, optim=SGD, device="cpu", rate = 0.0001):
+def supervised_train(model, optim=SGD, device="cpu", rate = 0.001):
     model.to(device)
     optimizer = optim(model.parameters(), lr = rate)
     criterion = nn.MSELoss()
@@ -141,7 +144,7 @@ def supervised_evaluator(model, device="cpu"):
     return engine
 
 
-n_epochs = 2000
+n_epochs = 4000
 trainer = supervised_train(model, Adam, device)
 
 @trainer.on(Events.ITERATION_COMPLETED(every=int(n_epochs / 100)))
@@ -149,12 +152,12 @@ def log_training_loss(trainer):
     losses.append(trainer.state.output)
     eps.append(trainer.state.epoch)
 
-@trainer.on(Events.ITERATION_COMPLETED(every=int(n_epochs/50)))
-def early_stopping(trainer):
-    if trainer.state.output < 10**-8:
-        losses.append(trainer.state.output)
-        eps.append(trainer.state.epoch)
-        trainer.terminate()
+# @trainer.on(Events.ITERATION_COMPLETED(every=int(n_epochs/50)))
+# def early_stopping(trainer):
+#     if trainer.state.output < 10**-8:
+#         losses.append(trainer.state.output)
+#         eps.append(trainer.state.epoch)
+#         trainer.terminate()
 
 ProgressBar().attach(trainer, metric_names='all')
 
