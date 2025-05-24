@@ -1,5 +1,5 @@
 # %% IMPORTS #
-import json
+from NNfunctions import *
 
 import torch
 import torch.nn as nn
@@ -18,7 +18,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # %% Structure for the NN: #
-
 class Noise_reductor(nn.Module):
     def __init__(self, f_signal=5001, h1=1500, h2=1000, h3=750, h4=500, h5=250, h6=100):
         super().__init__()
@@ -39,40 +38,6 @@ class Noise_reductor(nn.Module):
       return logits
 
 
-# Data handeling:
-def scale_tensor(dat_raw):
-    dat_raw = torch.FloatTensor(dat_raw)
-    min = dat_raw.amin(1)
-    max = dat_raw.amax(1)
-    # print(f"data is {dat_raw.shape} - {min.shape} / ({max.shape} - {min.shape} ")
-
-    dat_norm = (dat_raw - min[:, None])/(max[:, None] - min[:, None])
-    # std = dat_norm.std(1)
-    # dat_norm = dat_norm/std[:, None]
-    return dat_norm
-
-
-class SignalDataset(Dataset):
-    def __init__(self, json_path, split="train", transfrom=scale_tensor):
-
-        with open(json_path, "r") as f:
-            dat = json.load(f)
-        x_raw = dat[split]["f_signals"]
-        y_raw = dat[split]["f_cSignal"]
-
-        self.X = transfrom(x_raw)
-        self.Y = transfrom(y_raw)
-
-        self.f = torch.FloatTensor(dat["f"])
-
-    def __len__(self):
-        return len(self.Y)
-
-    def __getitem__(self, idx):
-        return self.X[idx], self.Y[idx]
-
-    def get_freqs(self):
-        return self.f
 
 
 # %% First, IMPORTING DATA #
@@ -103,11 +68,12 @@ for i in range(5):
 plt.show()
 '''
 
-# %% Defining training engine and Events  #
-# Here I Only intend to plot the losses graph so only need for basic event every 1/100 epochs
+# %% Defining training engine and Events
+
 losses = []
 eps = []
 model = Noise_reductor()
+# Here I Only intend to plot the losses graph so only need for basic event every 1/100 epochs
 def supervised_train(model, optim=SGD, device="cpu", rate = 0.001):
     model.to(device)
     optimizer = optim(model.parameters(), lr = rate)

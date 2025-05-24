@@ -20,7 +20,6 @@ def make_fft(data, t):
 
     return freq, X_w2
 
-
 def make_pink_noise(t, sigma):
     L = len(t)
     d = t[1] - t[0]

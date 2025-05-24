@@ -1,83 +1,149 @@
+# %% Imports
+import random
+import numpy as np
+from numpy.ma.extras import average
+
+from fft_pink_noise import make_noise
+
 import matplotlib.pyplot as plt
 from scipy.signal import welch
-from fft_pink_noise import *
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import tkinter as tk
 # import colorednoise
 import json
 
 
-# Create a voltage signal from a PHE sensor
-#    CONSTS      #
-rho_perp = 2.7e-7 #[ohm * m]
-AMRR = 0.02 #AMR ratio (rho_par-rho_perp)/rho_perp
-B_k = 10e-4 #[T] Difference of resistence for parallel B vs Perp B
-#Isotopy Field
-thickness = 200e-9 #[m] of the actual magnetic layer
-LL = 10e-6 #The misalignment[m]
-WW = 600e-6 #The width of the sensor [m]
-F_c = 2000 #The frequency of the current in the sensor [Hz]
-dt = 1e-4 #[sec]
-pi = np.pi
-I0 = 50e-3 #The current amplitude in the sensor[A]
-B0 = 1e-4 #The magnetic field on the sensor [T]
-F_B = 10 #The magnetic field frequency [Hz]
+# %% Plot 10 of fft signal + fft clear signal #
+with open("data.json") as json_file:
+    data = json.load(json_file)
+
+X = data['train']['f_signals']
+Y = data['train']['f_cSignal']
+f = data['f']
 
 
-#   GENERATING VOLTAGE TIME DOMAIN    #
-Time = np.arange(0,1,dt) # Starts at t=0 and ends at t=0.999s so it is repeating itself
-n = np.size(Time)
-delta_rho = rho_perp * AMRR #[ohm * m]
-BB = B0 * np.sin(2*pi*F_B*Time)
-II = I0 * np.sin(2*pi*F_c*Time)
-hh = BB / B_k
+# Choose which data set to show
+start = 0
+n = 10
 
-Voltage = (II / thickness) * ( (rho_perp + delta_rho - delta_rho*(hh**2))*(LL/WW) + delta_rho * hh)
-freq, X = make_fft(Voltage, Time)
+fig, sigPlot = plt.subplots(nrows=1, ncols=n,  figsize=(3*n,6))
+fig.text(0.6, 0.01, 'f [Hz]', ha='center', fontsize=12)
+fig.text(0.01, 0.5, 'FFT', ha='center', rotation='vertical', fontsize=12)
+import matplotlib.lines as mlines
 
-
-#   CREATING TRAIN NOISE + SIGNAL  #
-noise_typical_range = 2.5e-5
-Noise_var = var(noise_typical_range)
+# Create proxy artists
+data_handle = mlines.Line2D([], [], color='red', marker='.', linestyle='None', label='Data')
+pred_handle = mlines.Line2D([], [], color='blue', marker='*', linestyle='None', label='Prediction')
 
 
-wNoise = np.random.normal(0, Noise_var, n)
-_, fwNoise = make_fft(wNoise, Time)
-_, S_wNoise = welch(wNoise, 1 / dt, nperseg=n)
-
-# Using filtering in DFT Domain
-pNoise = make_pink_noise(Time, Noise_var)
-_, S_pNoise = welch(pNoise, 1 / dt, nperseg=n)
-_, fpNoise = make_fft(pNoise, Time)
-
-# Pink Using a library
-# pNoise = colorednoise.powerlaw_psd_gaussian(1, n) * Noise_var
-
-pinkperc = 0.5
-Noise = pinkperc * pNoise + (1 - pinkperc)* wNoise
-_, fNoise = make_fft(Noise, Time)
-
-#   COMBINED SIGNAL   #
-Signal = Noise + Voltage
-_, fSignal = make_fft(Signal, Time)
+for i_ in range(start,start+n):
+    Xi,Yi = X[i_],Y[i_]
 
 
-#   PLOTTING Volt+fVolt, Noise+fNoise   #
-fig, pureSig = plt.subplots(nrows=2, ncols=2)
+    i = i_%n
 
-pureSig[0, 0].plot(Time, Voltage, 'r-')
-pureSig[1, 0].semilogy(freq, X, '.-')
-pureSig[0, 1].plot(Time, Noise, 'm-')
-pureSig[1, 1].loglog(freq[1:], fNoise[1:], 'm')
 
-#   Add reference 1/f line for pink noise  #
-ref = fNoise[50] * (freq[50] / freq[1:])  # reference line ~1/f
-pureSig[1,1].semilogx(freq[1:], ref, 'k--', label='~1/f')
+    sigPlot[i].semilogy(f, Yi, "r.")
+    sigPlot[i].semilogy(f, Xi, "*")
+
+    # Add a title (number) to each column's top subplot
+    sigPlot[i].set_title(i)
+
+    xbor = [1900, 2100]
+    sigPlot[i].set_xlim(xbor[0],xbor[1])
+    sigPlot[i].set_xticks(np.linspace(xbor[0], xbor[1], 5))  # 11 ticks between 1950 and 2050
+    sigPlot[i].set_xticklabels([f"{xbor[0]:.0f}", "", "", "", f"{xbor[1]:.0f}"])
+
+plt.tight_layout(rect=[0.03, 0.03, 1, 0.88])
 
 
 
-#    PLOTTING THE COMBINED SIGNAL   #
-fig2, sigPlot = plt.subplots(nrows=2, ncols=1)
+# %%  PLOTTING NOISE   #
 
-sigPlot[0].plot(Time, Signal, 'g')
-sigPlot[1].loglog(freq, fSignal, "g--")
+dt = 1e-4  # 10 kHz sample rate
+fs = 1 / dt
+n_power = 2.5e-5
+pink_percentage = 0.5  # 50% pink, 50% white for the mix
+
+# Generate noises
+combined_noise, pink_noise, white_noise = make_noise(dt, n_power, pink_percentage)
+
+# Welch Power Spectral Density
+f_w, Pxx_w = welch(white_noise, fs, nperseg=1024)
+f_p, Pxx_p = welch(pink_noise, fs, nperseg=1024)
+f_c, Pxx_c = welch(combined_noise, fs, nperseg=1024)
+
+# Plotting (with log-log for max nerd power)
+fig, Noise = plt.subplots(nrows=3, figsize=(10, 6))
+
+Noise[0].loglog(f_w, Pxx_w, label='White Noise')
+Noise[1].loglog(f_p, Pxx_p, label='Pink Noise')
+Noise[2].loglog(f_c, Pxx_c, label='Combined Noise (50/50)')
+plt.xlabel('Frequency [Hz]')
+plt.ylabel('Power Spectral Density [V²/Hz]')
+plt.title('Welch Power Spectra: White vs Pink vs Combined')
+plt.legend()
+plt.grid(True, which="both", ls="--", lw=0.5)
+plt.tight_layout()
+
+#   Add reference lines for noises  #
+
+ref_p = Pxx_p[50] * (f_p[50] / f_p[1:])  # reference line ~1/f
+Noise[1].loglog(f_p[1:], ref_p, 'k--', label='~1/f')
+
+
+# %% Noise with slider
+
+def plot_spectrum(ax, noise, fs):
+    ax.clear()
+    f, Pxx = welch(noise, fs, nperseg=1024)
+    ax.loglog(f, Pxx, label="Combined Noise")
+
+    # Flat line (white noise reference)
+    flat_val = np.mean(Pxx)
+    ax.loglog(f, [flat_val] * len(f), 'k--', label="Flat Fit (White)")
+
+    # 1/f line (pink noise reference)
+    f_nonzero = f[f > 0]
+    A = Pxx[1] * f_nonzero[0]
+    pink_line = A / f_nonzero
+    ax.loglog(f_nonzero, pink_line, 'r--', label="1/f Fit (Pink)")
+
+    ax.set_title("Power Spectrum (Welch)")
+    ax.set_xlabel("Frequency [Hz]")
+    ax.set_ylabel("Power Spectral Density")
+    ax.grid(True, which='both', ls='--')
+    ax.legend()
+
+# ------------- GUI App -------------
+
+def update_plot(_):
+    pink_perc = pink_slider.get() / 100
+    power_val = 10 ** (power_slider.get())  # Exponential scale
+    noise, _, _ = make_noise(dt=1e-4, n_power=power_val, p_perc=pink_perc)
+    plot_spectrum(ax, noise, fs=1/1e-4)
+    canvas.draw()
+
+
+root = tk.Tk()
+root.title("Noise Mixer (White vs Pink)")
+
+fig, ax = plt.subplots(figsize=(7, 5))
+canvas = FigureCanvasTkAgg(fig, master=root)
+canvas.get_tk_widget().pack()
+
+
+pink_slider = tk.Scale(root, from_=0, to=100, orient='horizontal', label="Pink Noise %", command=update_plot)
+pink_slider.set(50)
+pink_slider.pack()
+
+power_slider = tk.Scale(root, from_=-6, to=-0, resolution=0.1, orient='horizontal', label="Log10 Noise Power", command=update_plot)
+power_slider.set(-4.6)  # ~2.5e-5
+power_slider.pack()
+
+update_plot(None)
 
 plt.show()
+root.mainloop()
+
+
