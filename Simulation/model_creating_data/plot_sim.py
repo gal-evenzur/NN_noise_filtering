@@ -1,10 +1,7 @@
-import math
-
-import numpy as np
 import matplotlib.pyplot as plt
 from scipy.signal import welch
 from fft_pink_noise import *
-import colorednoise
+# import colorednoise
 import json
 
 
@@ -39,7 +36,7 @@ freq, X = make_fft(Voltage, Time)
 
 #   CREATING TRAIN NOISE + SIGNAL  #
 noise_typical_range = 2.5e-5
-Noise_var = noise_variance(noise_typical_range)
+Noise_var = var(noise_typical_range)
 
 
 wNoise = np.random.normal(0, Noise_var, n)
