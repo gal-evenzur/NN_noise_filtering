@@ -72,9 +72,9 @@ def make_noise(dt, n_power, p_perc):
     return Noise, pNoise, wNoise
 
 def rand_train(I0, B0, F_B, noise_strength):
-    I0_r = I0 + normal(0, var(0.1*I0))
+    I0_r = I0 + normal(0, var(0.4*I0))
     B0_r = B0 + random.uniform(-B0*0.8, B0 * 3)
-    F_B_r = F_B
+    F_B_r = random.randint(F_B - 10, F_B + 10)
     noise_strength_r = noise_strength + normal(0, var(noise_strength*0.3))
     pink_percentage = 0
 
@@ -82,7 +82,7 @@ def rand_train(I0, B0, F_B, noise_strength):
 
 
 def rand_test(I0, B0, F_B, noise_strength):
-    I0_r = I0 + normal(0, var(0.1*I0))
+    I0_r = I0 + normal(0, var(0.01*I0))
     B0_r = B0 + normal(0, var(0.6*B0))
     F_B_r = F_B
     noise_strength_r = random.uniform(noise_strength*0.3, noise_strength*1.5)
@@ -131,5 +131,5 @@ def Signal_Noise_FFts(I0, B0, F_B, noise_strength, pink_percentage):
     Signal = Noise + Voltage
     _, fSignal = make_fft(Signal, 1/dt, len(Time))
 
-    return Voltage, P1, Signal, fSignal, Time, f, B0
+    return Voltage, P1, Signal, fSignal, Time, f
 

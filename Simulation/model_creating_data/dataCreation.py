@@ -9,6 +9,7 @@ clear_sig_f = []
 sig_time = []
 sig_f = []
 Corresponding_B_strength = []
+Corresponding_F_B = []
 
 
 n_trains = 1000
@@ -19,13 +20,14 @@ for _ in range(n_trains):
     noise_strength = 1e-7
     # Create a tuple with all the randomized parameters
     params = rand_train(I0, B0, F_B,noise_strength)
-    Volt, fVolt, Signal, fSignal, Time, freq, B = Signal_Noise_FFts(*params)
+    Volt, fVolt, Signal, fSignal, Time, freq = Signal_Noise_FFts(*params)
 
     if add_signals:
         clear_sig.append(Volt.tolist())
         sig_time.append(Signal.tolist())
     clear_sig_f.append(fVolt.tolist())
-    Corresponding_B_strength.append(B)
+    Corresponding_B_strength.append(params[1])
+    Corresponding_F_B.append(params[2])
     sig_f.append(fSignal.tolist())
 
 train = {
@@ -34,6 +36,7 @@ train = {
     "signals": sig_time,
     "f_signals": sig_f,
     "amplitudes": Corresponding_B_strength,
+    "F_B": Corresponding_F_B,
 }
 
 #   CREATING TEST NOISE AND SIGNAL    #
@@ -51,13 +54,14 @@ for _ in range(n_tests):
     noise_strength = 1e-7
     # Create a tuple with all the randomized parameters
     params = rand_train(I0, B0, F_B,noise_strength)
-    Volt, fVolt, Signal, fSignal, Time, freq, B = Signal_Noise_FFts(*params)
+    Volt, fVolt, Signal, fSignal, Time, freq = Signal_Noise_FFts(*params)
 
     if add_signals:
         clear_sig.append(Volt.tolist())
         sig_time.append(Signal.tolist())
     clear_sig_f.append(fVolt.tolist())
-    Corresponding_B_strength.append(B)
+    Corresponding_B_strength.append(params[1])
+    Corresponding_F_B.append(params[2])
     sig_f.append(fSignal.tolist())
 
 test = {
@@ -66,6 +70,7 @@ test = {
     "signals": sig_time,
     "f_signals": sig_f,
     "amplitudes": Corresponding_B_strength,
+    "F_B": Corresponding_F_B,
 }
 
 data = {

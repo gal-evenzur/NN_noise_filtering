@@ -2,7 +2,6 @@
 import random
 import numpy as np
 from numpy.ma.extras import average
-
 from fft_pink_noise import make_noise
 
 import matplotlib.pyplot as plt
@@ -21,6 +20,7 @@ X = data['train']['f_signals']
 Y = data['train']['f_cSignal']
 f = data['f']
 amps = data["train"]["amplitudes"]
+F_Bs = data["train"]["F_B"]
 
 
 # Choose which data set to show
@@ -40,6 +40,7 @@ pred_handle = mlines.Line2D([], [], color='blue', marker='*', linestyle='None', 
 for i_ in range(start,start+n):
     Xi,Yi = X[i_],Y[i_]
     Bi = amps[i_]
+    F_B = F_Bs[i_]
 
     i = i_%n
 
@@ -48,12 +49,12 @@ for i_ in range(start,start+n):
     sigPlot[i].semilogy(f, Yi, "r.-")
 
     # Add a title (number) to each column's top subplot
-    sigPlot[i].set_title(Bi)
+    sigPlot[i].set_title(f"n: {i}\n B0: {Bi:.2e}")
 
     sigPlot[i].grid(True)
-    # xbor = [1000, 3000]
-    # sigPlot[i].set_xlim(xbor[0],xbor[1])
-    # sigPlot[i].set_xticks(np.linspace(xbor[0], xbor[1], 5))  # 11 ticks between 1950 and 2050
+    xbor = [1000, 3000]
+    sigPlot[i].set_xlim(xbor[0],xbor[1])
+    sigPlot[i].set_xticks([xbor[0], 2000 - F_B, 2000 + F_B, xbor[1]])  # 11 ticks between 1950 and 2050
     # sigPlot[i].set_xticklabels([f"{xbor[0]:.0f}", "", "", "", f"{xbor[1]:.0f}"])
 
 plt.tight_layout(rect=[0.03, 0.03, 1, 0.88])
