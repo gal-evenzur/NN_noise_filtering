@@ -1,7 +1,3 @@
-import math
-
-from numpy.random import normal as normal
-from fft_pink_noise import var as n_var
 from fft_pink_noise import *
 import json
 
@@ -14,10 +10,10 @@ sig_time = []
 sig_f = []
 
 
-n_trains = 1000
+n_trains = 5
 for _ in range(n_trains):
     I0 = 50e-3  # The current amplitude in the sensor[A]
-    B0 = 5e-6  # The magnetic field on the sensor [T]
+    B0 = 1e-4  # The magnetic field on the sensor [T]
     F_B = 15  # The magnetic field frequency [Hz]
     noise_strength = 1e-5
     # Create a tuple with all the randomized parameters
@@ -43,7 +39,7 @@ clear_sig_f = []
 sig_time = []
 sig_f = []
 
-n_tests = 200
+n_tests = 0
 for _ in range(n_tests):
     I0 = 50e-3  # The current amplitude in the sensor[A]
     B0 = 5e-6  # The magnetic field on the sensor [T]

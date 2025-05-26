@@ -24,9 +24,9 @@ f = data['f']
 
 # Choose which data set to show
 start = 0
-n = 10
+n = 5
 
-fig, sigPlot = plt.subplots(nrows=1, ncols=n,  figsize=(3*n,6))
+fig, sigPlot = plt.subplots(nrows=1, ncols=n,  figsize=(4*n,6))
 fig.text(0.6, 0.01, 'f [Hz]', ha='center', fontsize=12)
 fig.text(0.01, 0.5, 'FFT', ha='center', rotation='vertical', fontsize=12)
 import matplotlib.lines as mlines
@@ -43,16 +43,17 @@ for i_ in range(start,start+n):
     i = i_%n
 
 
-    sigPlot[i].semilogy(f, Yi, "r.")
-    sigPlot[i].semilogy(f, Xi, "*")
+    sigPlot[i].semilogy(f, Xi, "g*")
+    sigPlot[i].semilogy(f, Yi, "r.-")
 
     # Add a title (number) to each column's top subplot
     sigPlot[i].set_title(i)
 
-    xbor = [1900, 2100]
-    sigPlot[i].set_xlim(xbor[0],xbor[1])
-    sigPlot[i].set_xticks(np.linspace(xbor[0], xbor[1], 5))  # 11 ticks between 1950 and 2050
-    sigPlot[i].set_xticklabels([f"{xbor[0]:.0f}", "", "", "", f"{xbor[1]:.0f}"])
+    sigPlot[i].grid(True)
+    # xbor = [1000, 3000]
+    # sigPlot[i].set_xlim(xbor[0],xbor[1])
+    # sigPlot[i].set_xticks(np.linspace(xbor[0], xbor[1], 5))  # 11 ticks between 1950 and 2050
+    # sigPlot[i].set_xticklabels([f"{xbor[0]:.0f}", "", "", "", f"{xbor[1]:.0f}"])
 
 plt.tight_layout(rect=[0.03, 0.03, 1, 0.88])
 
