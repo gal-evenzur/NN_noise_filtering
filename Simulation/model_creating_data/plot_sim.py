@@ -20,6 +20,7 @@ with open("data.json") as json_file:
 X = data['train']['f_signals']
 Y = data['train']['f_cSignal']
 f = data['f']
+amps = data["train"]["amplitudes"]
 
 
 # Choose which data set to show
@@ -38,7 +39,7 @@ pred_handle = mlines.Line2D([], [], color='blue', marker='*', linestyle='None', 
 
 for i_ in range(start,start+n):
     Xi,Yi = X[i_],Y[i_]
-
+    Bi = amps[i_]
 
     i = i_%n
 
@@ -47,7 +48,7 @@ for i_ in range(start,start+n):
     sigPlot[i].semilogy(f, Yi, "r.-")
 
     # Add a title (number) to each column's top subplot
-    sigPlot[i].set_title(i)
+    sigPlot[i].set_title(Bi)
 
     sigPlot[i].grid(True)
     # xbor = [1000, 3000]
