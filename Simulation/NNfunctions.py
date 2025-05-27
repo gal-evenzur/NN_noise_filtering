@@ -25,6 +25,7 @@ class SignalDataset(Dataset):
             dat = json.load(f)
         x_raw = dat[split]["f_signals"]
         y_raw = dat[split]["f_cSignal"]
+        self.B = dat[split]["amplitudes"]
 
         self.X = transfrom(x_raw)
         self.Y = transfrom(y_raw)
@@ -39,5 +40,8 @@ class SignalDataset(Dataset):
 
     def get_freqs(self):
         return self.f
+
+    def get_amps(self):
+        return self.B
 
 
