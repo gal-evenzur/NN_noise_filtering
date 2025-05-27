@@ -52,9 +52,9 @@ for i_ in range(start,start+n):
     sigPlot[i].set_title(f"n: {i}\n B0: {Bi:.2e}")
 
     sigPlot[i].grid(True)
-    xbor = [1000, 3000]
-    sigPlot[i].set_xlim(xbor[0],xbor[1])
-    sigPlot[i].set_xticks([xbor[0], 2000 - F_B, 2000 + F_B, xbor[1]])  # 11 ticks between 1950 and 2050
+    # xbor = [1000, 3000]
+    # sigPlot[i].set_xlim(xbor[0],xbor[1])
+    # sigPlot[i].set_xticks([2000 - F_B, 2000 + F_B])  # 11 ticks between 1950 and 2050
     # sigPlot[i].set_xticklabels([f"{xbor[0]:.0f}", "", "", "", f"{xbor[1]:.0f}"])
 
 plt.tight_layout(rect=[0.03, 0.03, 1, 0.88])
