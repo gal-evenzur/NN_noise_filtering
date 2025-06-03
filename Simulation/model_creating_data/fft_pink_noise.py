@@ -90,7 +90,7 @@ def rand_test(I0, B0, F_B, noise_strength):
 
     return I0_r, B0_r, F_B_r, noise_strength_r, pink_percentage
 
-def Signal_Noise_FFts(I0, B0, F_B, noise_strength, pink_percentage):
+def Signal_Noise_FFts(I0, B0, F_B, noise_strength, pink_percentage, is_padding=False, is_window=False):
     #I0 The current amplitude in the sensor[A]
     #B0 = The magnetic field on the sensor [T]
     #F_B  The magnetic field frequency [Hz]
@@ -120,18 +120,18 @@ def Signal_Noise_FFts(I0, B0, F_B, noise_strength, pink_percentage):
 
     Voltage = (II / thickness) * ((rho_perp + delta_rho - delta_rho * (hh ** 2)) * (LL / WW) + delta_rho * hh)
 
-    # Window the signal to prevent spectal leakage when padding
-    window = np.hanning(len(Voltage))
-    Voltage_window = window * Voltage
-    Voltage_window = Voltage
+    if is_window:
+        # Window the signal to prevent spectal leakage when padding
+        window = np.hanning(len(Voltage))
+        Voltage = window * Voltage
 
-    # Padding so the peaks aren't as sharp
-    n = np.ceil(np.log2(len(Voltage)))
-    Voltage_padded = np.pad(Voltage_window, (0,len(Voltage_window)*4))
+    if is_padding:
+        # Padding so the peaks aren't as sharp
+        n = np.ceil(np.log2(len(Voltage)))
+        Voltage = np.pad(Voltage, (0,len(Voltage)*4))
 
-    # Voltage_padded = Voltage
 
-    f, P1 = make_fft(Voltage_padded, 1 / dt, len(Voltage_padded))
+    f, P1 = make_fft(Voltage, 1 / dt, len(Voltage))
 
     #   CREATING NOISES     #
     Noise, *_ = make_noise(dt, noise_strength, pink_percentage)
@@ -140,16 +140,16 @@ def Signal_Noise_FFts(I0, B0, F_B, noise_strength, pink_percentage):
     #   COMBINED SIGNAL   #
     Signal = Noise + Voltage
 
-    # Window the signal to prevent spectal leakage when padding
-    window = np.hanning(len(Signal))
-    Signal_window = window * Signal
-    Signal_window = Signal
+    if is_window:
+        # Window the signal to prevent spectal leakage when padding
+        window = np.hanning(len(Signal))
+        Signal = window * Signal
 
-    # Padding so the peaks aren't as sharp
-    n = np.ceil(np.log2(len(Signal_window)))
-    Signal_padded = np.pad(Signal_window, (0,len(Signal_window)*4))
+    if is_padding:
+        # Padding so the peaks aren't as sharp
+        n = np.ceil(np.log2(len(Signal)))
+        Signal = np.pad(Signal, (0,len(Signal)*4))
 
-    # Signal_padded = Signal
-    _, fSignal = make_fft(Signal_padded, 1/dt, len(Signal_padded))
+    _, fSignal = make_fft(Signal, 1/dt, len(Signal))
 
     return Voltage, P1, Signal, fSignal, Time, f

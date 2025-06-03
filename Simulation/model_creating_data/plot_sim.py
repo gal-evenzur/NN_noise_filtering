@@ -59,8 +59,8 @@ for i_ in range(start,start+n):
 
 plt.tight_layout(rect=[0.03, 0.03, 1, 0.88])
 
-
-
+plt.show()
+'''
 # %%  PLOTTING NOISE   #
 
 dt = 1e-4  # 10 kHz sample rate
@@ -148,5 +148,5 @@ update_plot(None)
 
 plt.show()
 root.mainloop()
-
+'''
 

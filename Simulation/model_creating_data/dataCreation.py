@@ -12,14 +12,12 @@ sig_time = []
 sig_f = []
 Corresponding_B_strength = []
 Corresponding_F_B = []
-fcenter = 2000
-df = 50
 
 
 n_trains = 5
 for _ in range(n_trains):
     I0 = 50e-3  # The current amplitude in the sensor[A]
-    B0 = 1e-9  # The magnetic field on the sensor [T]
+    B0 = 1e-12  # The magnetic field on the sensor [T]
     F_B = 15  # The magnetic field frequency [Hz]
     noise_strength = 1e-7
     # Create a tuple with all the randomized parameters
@@ -53,7 +51,7 @@ Corresponding_B_strength = []
 n_tests = 0
 for _ in range(n_tests):
     I0 = 50e-3  # The current amplitude in the sensor[A]
-    B0 = 1e-9  # The magnetic field on the sensor [T]
+    B0 = 3e-12  # The magnetic field on the sensor [T]
     F_B = 15  # The magnetic field frequency [Hz]
     noise_strength = 1e-7
     # Create a tuple with all the randomized parameters

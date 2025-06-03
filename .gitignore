@@ -1,2 +1,4 @@
 /Simulation/model_creating_data/data.json
 .idea
+**/data.json
+**/__pycache__
