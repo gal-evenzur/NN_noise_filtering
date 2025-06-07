@@ -19,7 +19,8 @@ with open("data.json") as json_file:
 X = data['train']['f_signals']
 Y = data['train']['f_cSignal']
 f = data['f']
-amps = data["train"]["amplitudes"]
+B_amp = data["train"]["B_amp"]
+I_amp = data["train"]["I_amp"]
 F_Bs = data["train"]["F_B"]
 
 
@@ -39,14 +40,25 @@ pred_handle = mlines.Line2D([], [], color='blue', marker='*', linestyle='None', 
 
 for i_ in range(start,start+n):
     Xi,Yi = X[i_],Y[i_]
-    Bi = amps[i_]
+    Bi = B_amp[i_]
     F_B = F_Bs[i_]
+    I = I_amp[i_]
+    highlight_x = [2000 - F_B, 2000, 2000 + F_B]
+    highlight_y = [Bi, I, Bi]
 
     i = i_%n
 
 
     sigPlot[i].semilogy(f, Xi, "g*")
     sigPlot[i].semilogy(f, Yi, "r.-")
+
+    sigPlot[i].scatter(highlight_x, highlight_y,
+                       edgecolors='black',
+                       facecolors="none",
+                       s=100,
+                       zorder=5,
+                       linewidths=2,
+                       label='Emphasized Points')
 
     # Add a title (number) to each column's top subplot
     sigPlot[i].set_title(f"n: {i}\n B0: {Bi:.2e}")

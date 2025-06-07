@@ -11,6 +11,7 @@ clear_sig_f = []
 sig_time = []
 sig_f = []
 Corresponding_B_strength = []
+Corresponding_Main_Peak_strength = []
 Corresponding_F_B = []
 
 
@@ -24,20 +25,24 @@ for _ in range(n_trains):
     params = rand_train(I0, B0, F_B,noise_strength)
     Volt, fVolt, Signal, fSignal, Time, freq = Signal_Noise_FFts(*params)
 
+    real_F_B = params[2]
+
     if add_signals:
         clear_sig.append(Volt.tolist())
         sig_time.append(Signal.tolist())
     clear_sig_f.append(fVolt.tolist())
     sig_f.append(fSignal.tolist())
-    Corresponding_B_strength.append(params[1])
-    Corresponding_F_B.append(params[2])
+    Corresponding_B_strength.append(fVolt[2000-real_F_B])
+    Corresponding_Main_Peak_strength.append(np.max(fVolt))
+    Corresponding_F_B.append(real_F_B)
 
 train = {
     "cSignal": clear_sig,
     "f_cSignal": clear_sig_f,
     "signals": sig_time,
     "f_signals": sig_f,
-    "amplitudes": Corresponding_B_strength,
+    "B_amp": Corresponding_B_strength,
+    "I_amp": Corresponding_Main_Peak_strength,
     "F_B": Corresponding_F_B,
 }
 
