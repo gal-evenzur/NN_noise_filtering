@@ -153,3 +153,21 @@ def Signal_Noise_FFts(I0, B0, F_B, noise_strength, pink_percentage, is_padding=F
     _, fSignal = make_fft(Signal, 1/dt, len(Signal))
 
     return Voltage, P1, Signal, fSignal, Time, f
+
+
+def peak_heights(clear_signal, f_b, f_center, dir=False):
+    # Receives a numpy array, and returns the height of each of the peaks in the signal
+    # Needs to receive the clean signals
+    peaks = {
+        'left': clear_signal[f_center - f_b],
+        'center': np.max(clear_signal),
+        'right': clear_signal[f_center + f_b]
+    }
+
+    if dir:
+        return peaks
+    else:
+        return [peaks['left'], peaks['center'], peaks['right']]
+
+
+

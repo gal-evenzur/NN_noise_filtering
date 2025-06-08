@@ -10,7 +10,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import tkinter as tk
 # import colorednoise
 import json
-
+from NNfunctions import scale_tensor, unscale_tensor
+from model_creating_data.fft_pink_noise import peak_heights
 
 # %% Plot 10 of fft signal + fft clear signal #
 with open("data.json") as json_file:
@@ -19,10 +20,13 @@ with open("data.json") as json_file:
 X = data['train']['f_signals']
 Y = data['train']['f_cSignal']
 f = data['f']
-B_amp = data["train"]["B_amp"]
-I_amp = data["train"]["I_amp"]
 F_Bs = data["train"]["F_B"]
 
+unscale=True
+scale_train = {'log':True, 'norm':True, 'minmax':False}
+scale_test = {'log':True, 'norm':False, 'minmax':False}
+X, Xpar = scale_tensor(X, **scale_train)
+Y, Ypar = scale_tensor(Y, **scale_test)
 
 # Choose which data set to show
 start = 0
@@ -40,17 +44,23 @@ pred_handle = mlines.Line2D([], [], color='blue', marker='*', linestyle='None', 
 
 for i_ in range(start,start+n):
     Xi,Yi = X[i_],Y[i_]
-    Bi = B_amp[i_]
+    if unscale:
+        Xi = unscale_tensor(Xi, Xpar)
+        Yi = unscale_tensor(Yi, Ypar)
+
     F_B = F_Bs[i_]
-    I = I_amp[i_]
     highlight_x = [2000 - F_B, 2000, 2000 + F_B]
-    highlight_y = [Bi, I, Bi]
+    highlight_y = peak_heights(Yi, f_b=F_B, f_center=2000, dir=False)
 
     i = i_%n
 
+    if scale_train['log'] and not unscale:
+        sigPlot[i].plot(f, Xi, "g*")
+        sigPlot[i].plot(f, Yi, "r.-")
 
-    sigPlot[i].semilogy(f, Xi, "g*")
-    sigPlot[i].semilogy(f, Yi, "r.-")
+    else:
+        sigPlot[i].semilogy(f, Xi, "g*")
+        sigPlot[i].semilogy(f, Yi, "r.-")
 
     sigPlot[i].scatter(highlight_x, highlight_y,
                        edgecolors='black',
@@ -61,7 +71,7 @@ for i_ in range(start,start+n):
                        label='Emphasized Points')
 
     # Add a title (number) to each column's top subplot
-    sigPlot[i].set_title(f"n: {i}\n B0: {Bi:.2e}")
+    sigPlot[i].set_title(f"n: {i}\n B0: {highlight_y[0]:.2e}")
 
     sigPlot[i].grid(True)
     # xbor = [1000, 3000]
