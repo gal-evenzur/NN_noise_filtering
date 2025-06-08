@@ -6,8 +6,9 @@ from ignite.engine import Engine, Events
 from ignite.contrib.handlers import ProgressBar
 import json
 import numpy as np
+from model_creating_data.fft_pink_noise import peak_heights
 
-def scale_tensor(dat_raw, log=False, norm=False, minmax=False):
+def scale_tensor(dat_raw, log=False, norm=False, minmax=False, tensor=False):
     sc_par = {}
     min = np.min(dat_raw)
     max = np.max(dat_raw)
@@ -27,6 +28,10 @@ def scale_tensor(dat_raw, log=False, norm=False, minmax=False):
     if minmax:
         dat_raw = (dat_raw - min)/(max - min)
         sc_par['minmax'] = [min, max]
+
+    if tensor:
+        dat_raw = torch.tensor(dat_raw)
+        sc_par['tensor'] = True
 
     return dat_raw, sc_par
 
@@ -56,13 +61,15 @@ class SignalDataset(Dataset):
         clean_raw = dat[split]["f_cSignal"]
         self.F_B = dat[split]["F_B"]
 
-        self.X = transfrom(sig_raw)
-        self.Y = transfrom(clean_raw)
+        amps = peak_heights(clean_raw, f_b=self.F_B, f_center=2000, dir=False)
+
+        self.X, self.X_scale = transfrom(sig_raw, log=True, norm=True, tensor=True)
+        self.Y, self.Y_scale = transfrom(amps, log=True, tensor=True)
 
         self.f = torch.FloatTensor(dat["f"])
 
     def __len__(self):
-        return len(self.Y)
+        return len(self.X)
 
     def __getitem__(self, idx):
         return self.X[idx], self.Y[idx]
@@ -70,7 +77,9 @@ class SignalDataset(Dataset):
     def get_freqs(self):
         return self.f
 
-    def get_amps(self):
-        return self.B
+    def get_peak_freqs(self, idx):
+        return [2000 - self.F_B[idx], 2000, 2000+self.F_B[idx]]
 
+    def unscale(self):
+        return self.X_scale, self.Y_scale
 
