@@ -4,6 +4,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch.optim import SGD, Adam
 from ignite.engine import Engine, Events
 from ignite.contrib.handlers import ProgressBar
+from ignite.metrics import Metric
 import json
 import numpy as np
 from model_creating_data.fft_pink_noise import peak_heights
@@ -93,3 +94,27 @@ class SignalDataset(Dataset):
     def get_clean_sig(self, idx):
         return self.clean[idx]
 
+
+class MeanRelativeError(Metric):
+    def __init__(self, output_transform=lambda x: x):
+        super(MeanRelativeError, self).__init__(output_transform=output_transform)
+
+    def reset(self):
+        self._sum = None
+        self._count = 0
+
+    def update(self, output):
+        y_p, y_t = output
+        y_pred = 10 ** y_p
+        y_true = 10 ** y_t
+        eps = 1e-8
+        rel_error = torch.abs((y_pred - y_true) / y_true.clamp(min=eps))  # shape: [batch, 3]
+
+        if self._sum is None:
+            self._sum = torch.zeros(rel_error.size(1), device=rel_error.device)
+
+        self._sum += rel_error.sum(dim=0)
+        self._count += rel_error.size(0)
+
+    def compute(self):
+        return (100.0 * self._sum / self._count).cpu().numpy()  # shape: (3,)

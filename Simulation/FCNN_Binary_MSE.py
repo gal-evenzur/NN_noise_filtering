@@ -7,7 +7,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch.optim import SGD, Adam
 from ignite.engine import Engine, Events
 from ignite.contrib.handlers import ProgressBar
-
+from ignite.metrics import Loss
 import matplotlib
 matplotlib.use('TkAgg')  # or 'Agg' for testing headless
 
@@ -55,6 +55,7 @@ trainSet = SignalDataset('model_creating_data/data.json', split="train")
 testSet = SignalDataset('model_creating_data/data.json', split="test")
 
 dataloader = DataLoader(trainSet, batch_size=hyperVar["batch_size"], shuffle=True)
+test_loader = DataLoader(testSet, batch_size=hyperVar["batch_size"], shuffle=True)
 
 '''
 # Example of the scaled versions of the signals: #
@@ -114,11 +115,14 @@ def supervised_evaluator(model, device="cpu"):
             X, Y = X_batch.to(device), Y_batch.to(device)
             Y_pred = model(X)
 
-            return Y_pred, Y_batch
+            return Y_pred, Y
+
     engine = Engine(_interference)
+
+    MeanRelativeError().attach(engine, 'relative_error_pct_per_component')
     return engine
 
-
+evaluator = supervised_evaluator(model, device=device)
 trainer = supervised_train(model, optim=hyperVar['optimizer'], device=device, rate = hyperVar["lr"])
 
 @trainer.on(Events.ITERATION_COMPLETED(every=int(hyperVar['n_epochs'] / 100)))
@@ -141,6 +145,9 @@ trainer.run(dataloader, max_epochs=hyperVar['n_epochs'])
 
 
 # %%   PLOTTING THE FILTERING TO SEE IF IT WORKED   #
+state = evaluator.run(test_loader)
+rel_errors = state.metrics["relative_error_pct_per_component"]
+print(f"Relative Error (%): Left = {rel_errors[0]:.2f}, Center = {rel_errors[1]:.2f}, Right = {rel_errors[2]:.2f}")
 
 # Seeing how the losses change:
 plt.figure()
@@ -182,9 +189,9 @@ for i_ in range(start,start+n):
     Y_test_plot = Y_test.cpu().detach()
     X_test_plot = X_test.cpu().detach()
 
-    # X_test_plot = unscale_tensor(X_test_plot, X_params)
-    # Y_test_plot = unscale_tensor(Y_test_plot, Y_params)
-    # Y_pred_plot = unscale_tensor(Y_pred_plot, Y_params)
+    X_test_plot = unscale_tensor(X_test_plot, X_params)
+    Y_test_plot = unscale_tensor(Y_test_plot, Y_params)
+    Y_pred_plot = unscale_tensor(Y_pred_plot, Y_params)
 
     Yn = Y_test_plot.numpy()
 
@@ -206,10 +213,10 @@ for i_ in range(start,start+n):
                        linewidths=2,
                        label='Predicted peak heights')
 
-    # sigPlot[i].set_yscale('log')
+    sigPlot[i].set_yscale('log')
 
     sigPlot[i].plot(f, X_test_plot.numpy(), "g*")
-    # sigPlot[i].semilogy(f, clean_sig, "r.-")
+    sigPlot[i].semilogy(f, clean_sig, "r.-")
 
     # Add a title (number) to each column's top subplot
     sigPlot[i].set_title(f"n: {i}\n B0: {Y_test_plot[0]:.2e}")

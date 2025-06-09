@@ -161,8 +161,6 @@ def peak_heights(clear_signal, f_b, f_center, dir=False):
         freqs = [f_center - f_b, f_center, f_center + f_b]
         return clear_signal[freqs]
 
-
-
     n_samp = len(clear_signal)
 
     l = f_center - f_b
