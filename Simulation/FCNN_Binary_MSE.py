@@ -20,17 +20,17 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # %% Structure for the NN: #
 hyperVar = {
-    'lr': 1e-5,
-    'n_epochs': 300,
-    'batch_size': 64,
+    'lr': 1e-6,
+    'n_epochs': 500,
+    'batch_size': 32,
     'device': device,
     'n_plotted': 10,
-    'start': 0,
+    'start': 10,
     'optimizer': Adam,
             }
 
 class PeakHeightRegressor(nn.Module):
-    def __init__(self, f_signal=5001, h1=1024, h2=256, h3=128, h4=64, h5=32, output=3):
+    def __init__(self, f_signal=5001, h1=1024, h2=512, h3=256, h4=128, h5=64, output=3):
         super().__init__()
 
         self.linear_stack = nn.Sequential(
@@ -38,7 +38,9 @@ class PeakHeightRegressor(nn.Module):
             nn.Linear(h1, h2),
             nn.Linear(h2, h3),
             nn.Linear(h3, h4),
-            nn.Linear(h4, output),
+            nn.Linear(h4, h5),
+            nn.Linear(h5, output),
+
         )
 
 
@@ -87,7 +89,7 @@ model = PeakHeightRegressor()
 def supervised_train(model, optim=SGD, device="cpu", rate = 0.01):
     model.to(device)
     optimizer = optim(model.parameters(), lr = rate)
-    criterion = nn.MSELoss()
+    criterion = RelativeErrorLoss()
     losses = []
     eps = []
 
@@ -119,7 +121,7 @@ def supervised_evaluator(model, device="cpu"):
 
     engine = Engine(_interference)
 
-    MeanRelativeError().attach(engine, 'relative_error_pct_per_component')
+    MeanRelativeError().attach(engine, 'rel_error_3')
     return engine
 
 evaluator = supervised_evaluator(model, device=device)
@@ -146,7 +148,7 @@ trainer.run(dataloader, max_epochs=hyperVar['n_epochs'])
 
 # %%   PLOTTING THE FILTERING TO SEE IF IT WORKED   #
 state = evaluator.run(test_loader)
-rel_errors = state.metrics["relative_error_pct_per_component"]
+rel_errors = state.metrics["rel_error_3"]
 print(f"Relative Error (%): Left = {rel_errors[0]:.2f}, Center = {rel_errors[1]:.2f}, Right = {rel_errors[2]:.2f}")
 
 # Seeing how the losses change:

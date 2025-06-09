@@ -72,20 +72,20 @@ def make_noise(dt, n_power, p_perc):
     return Noise, pNoise, wNoise
 
 def rand_train(I0, B0, F_B, noise_strength):
-    I0_r = I0 + normal(0, var(0.4*I0))
-    B0_r = B0 + random.uniform(-B0*0.8, B0 * 10)
-    F_B_r = random.randint(F_B - 10, F_B + 10)
-    noise_strength_r = random.uniform(noise_strength*0.3, noise_strength*1.5)
-    pink_percentage = 0
+    I0_r = I0 * random.uniform(0.1, 5)
+    B0_r = B0 * random.uniform(0.1, 10)
+    F_B_r = random.randint(F_B - 5, F_B + 20)
+    noise_strength_r = noise_strength*random.uniform(0.8, 1.4)
+    pink_percentage = np.abs(normal(0, 0.5))
 
     return I0_r, B0_r, F_B_r, noise_strength_r, pink_percentage
 
 
 def rand_test(I0, B0, F_B, noise_strength):
-    I0_r = I0 + normal(0, var(0.01*I0))
-    B0_r = B0 + normal(0, var(0.5*B0))
+    I0_r = I0 + normal(0, var(0.1*I0))
+    B0_r = B0 * random.uniform(0.25, 3)
     F_B_r = F_B
-    noise_strength_r = noise_strength + normal(0, var(noise_strength*0.3))
+    noise_strength_r = noise_strength
     pink_percentage = 0
 
     return I0_r, B0_r, F_B_r, noise_strength_r, pink_percentage

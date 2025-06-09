@@ -29,8 +29,8 @@ X, Xpar = scale_tensor(X, **scale_train)
 Y, Ypar = scale_tensor(Y, **scale_test)
 
 # Choose which data set to show
-start = 0
-n = 5
+start = 5
+n = 10
 
 fig, sigPlot = plt.subplots(nrows=1, ncols=n,  figsize=(4*n,6))
 fig.text(0.6, 0.01, 'f [Hz]', ha='center', fontsize=12)

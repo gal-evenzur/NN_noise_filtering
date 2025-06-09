@@ -107,7 +107,7 @@ class MeanRelativeError(Metric):
         y_p, y_t = output
         y_pred = 10 ** y_p
         y_true = 10 ** y_t
-        eps = 1e-8
+        eps = 1e-15
         rel_error = torch.abs((y_pred - y_true) / y_true.clamp(min=eps))  # shape: [batch, 3]
 
         if self._sum is None:
@@ -118,3 +118,12 @@ class MeanRelativeError(Metric):
 
     def compute(self):
         return (100.0 * self._sum / self._count).cpu().numpy()  # shape: (3,)
+
+class RelativeErrorLoss(nn.Module):
+    def __init__(self, eps=1e-8):
+        super().__init__()
+        self.eps = eps
+
+    def forward(self, y_pred, y_true):
+        rel_error = torch.abs((y_pred - y_true) / (y_true.clamp(min=self.eps)))
+        return rel_error.mean()  # mean over batch and components
