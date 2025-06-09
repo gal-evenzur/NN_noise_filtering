@@ -75,7 +75,7 @@ def rand_train(I0, B0, F_B, noise_strength):
     I0_r = I0 + normal(0, var(0.4*I0))
     B0_r = B0 + random.uniform(-B0*0.8, B0 * 10)
     F_B_r = random.randint(F_B - 10, F_B + 10)
-    noise_strength_r = noise_strength + normal(0, var(noise_strength*0.3))
+    noise_strength_r = random.uniform(noise_strength*0.3, noise_strength*1.5)
     pink_percentage = 0
 
     return I0_r, B0_r, F_B_r, noise_strength_r, pink_percentage
@@ -83,9 +83,9 @@ def rand_train(I0, B0, F_B, noise_strength):
 
 def rand_test(I0, B0, F_B, noise_strength):
     I0_r = I0 + normal(0, var(0.01*I0))
-    B0_r = B0 + random.uniform(-B0*0.8, B0 * 10)
+    B0_r = B0 + normal(0, var(0.5*B0))
     F_B_r = F_B
-    noise_strength_r = random.uniform(noise_strength*0.3, noise_strength*1.5)
+    noise_strength_r = noise_strength + normal(0, var(noise_strength*0.3))
     pink_percentage = 0
 
     return I0_r, B0_r, F_B_r, noise_strength_r, pink_percentage
@@ -154,20 +154,39 @@ def Signal_Noise_FFts(I0, B0, F_B, noise_strength, pink_percentage, is_padding=F
 
     return Voltage, P1, Signal, fSignal, Time, f
 
-
 def peak_heights(clear_signal, f_b, f_center, dir=False):
-    # Receives a numpy array, and returns the height of each of the peaks in the signal
-    # Needs to receive the clean signals
+    # Receives a Tensor, and returns the height of each of the peaks in the signal
+    # Needs to receive the clean signals in a dataset form (n_samps x L)
+    if type(clear_signal) == np.ndarray:
+        freqs = [f_center - f_b, f_center, f_center + f_b]
+        return clear_signal[freqs]
+
+
+
+    n_samp = len(clear_signal)
+
+    l = f_center - f_b
+    m = torch.full_like(l, 2000)
+    r = f_center + f_b
+
+    # Concatenate indices: shape (n_samp, 3)
+    indices = torch.cat([l, m, r], dim=1)  # (n_samp, 3)
+
+    # Create row indices: [0, 1, ..., n_samp-1] → shape (n_samp, 1), then expand to (n_samp, 3)
+    row_indices = torch.arange(n_samp).unsqueeze(1).expand(-1, 3)
+
+    # Use advanced indexing to extract the values
+    result = clear_signal[row_indices, indices]  # shape: (n_samp, 3)
+
     peaks = {
-        'left': clear_signal[f_center - f_b],
-        'center': np.max(clear_signal),
-        'right': clear_signal[f_center + f_b]
+        'left': result[:, 0],
+        'center': result[:, 1],
+        'right': result[:, 2],
     }
 
     if dir:
         return peaks
     else:
-        return [peaks['left'], peaks['center'], peaks['right']]
-
+        return result
 
 

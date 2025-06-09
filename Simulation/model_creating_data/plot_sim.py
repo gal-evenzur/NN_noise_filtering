@@ -17,10 +17,10 @@ from model_creating_data.fft_pink_noise import peak_heights
 with open("data.json") as json_file:
     data = json.load(json_file)
 
-X = data['train']['f_signals']
-Y = data['train']['f_cSignal']
+X = data['test']['f_signals']
+Y = data['test']['f_cSignal']
 f = data['f']
-F_Bs = data["train"]["F_B"]
+F_Bs = data["test"]["F_B"]
 
 unscale=True
 scale_train = {'log':True, 'norm':True, 'minmax':False}

@@ -10,28 +10,30 @@ from model_creating_data.fft_pink_noise import peak_heights
 
 def scale_tensor(dat_raw, log=False, norm=False, minmax=False, tensor=False):
     sc_par = {}
-    min = np.min(dat_raw)
-    max = np.max(dat_raw)
     # print(f"data is {dat_raw.shape} - {min.shape} / ({max.shape} - {min.shape} ")
+    if tensor:
+        lib = torch
+    else:
+        lib = np
 
     if log:
-        dat_raw = np.log10(dat_raw)
+        dat_raw = lib.log10(dat_raw)
         sc_par['log'] = True
 
     if norm:
-        mean = np.mean(dat_raw)
-        std = np.std(dat_raw)
+        mean = lib.mean(dat_raw)
+        std = lib.std(dat_raw)
         dat_raw = (dat_raw - mean)/std
         sc_par['norm'] = [mean, std]
 
 
     if minmax:
+        min = lib.min(dat_raw)
+        max = lib.max(dat_raw)
         dat_raw = (dat_raw - min)/(max - min)
         sc_par['minmax'] = [min, max]
 
-    if tensor:
-        dat_raw = torch.tensor(dat_raw)
-        sc_par['tensor'] = True
+
 
     return dat_raw, sc_par
 
@@ -59,7 +61,12 @@ class SignalDataset(Dataset):
             dat = json.load(f)
         sig_raw = dat[split]["f_signals"]
         clean_raw = dat[split]["f_cSignal"]
+        self.clean = clean_raw
         self.F_B = dat[split]["F_B"]
+
+        sig_raw = torch.tensor(sig_raw, dtype=torch.float32)
+        clean_raw = torch.tensor(clean_raw, dtype=torch.float32)
+        self.F_B = torch.tensor(self.F_B, dtype=torch.int32).unsqueeze(1)
 
         amps = peak_heights(clean_raw, f_b=self.F_B, f_center=2000, dir=False)
 
@@ -78,8 +85,11 @@ class SignalDataset(Dataset):
         return self.f
 
     def get_peak_freqs(self, idx):
-        return [2000 - self.F_B[idx], 2000, 2000+self.F_B[idx]]
+        return [2000 - self.F_B[idx].item(), 2000, 2000+self.F_B[idx].item()]
 
     def unscale(self):
         return self.X_scale, self.Y_scale
+
+    def get_clean_sig(self, idx):
+        return self.clean[idx]
 

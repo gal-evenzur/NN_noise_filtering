@@ -20,8 +20,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # %% Structure for the NN: #
 hyperVar = {
-    'lr': 0.1,
-    'n_epochs': 400,
+    'lr': 1e-5,
+    'n_epochs': 300,
     'batch_size': 64,
     'device': device,
     'n_plotted': 10,
@@ -30,7 +30,7 @@ hyperVar = {
             }
 
 class PeakHeightRegressor(nn.Module):
-    def __init__(self, f_signal=5001, h1=512, h2=256, h3=128, h4=64, h5=32, output=3):
+    def __init__(self, f_signal=5001, h1=1024, h2=256, h3=128, h4=64, h5=32, output=3):
         super().__init__()
 
         self.linear_stack = nn.Sequential(
@@ -38,8 +38,7 @@ class PeakHeightRegressor(nn.Module):
             nn.Linear(h1, h2),
             nn.Linear(h2, h3),
             nn.Linear(h3, h4),
-            nn.Linear(h4, h5),
-            nn.Linear(h5, output),
+            nn.Linear(h4, output),
         )
 
 
@@ -154,40 +153,44 @@ plt.ylabel("Loss")
 n = hyperVar['n_plotted']
 start = hyperVar['start']
 
-fig, sigPlot = plt.subplots(nrows=2, ncols=n,  figsize=(4*n,6))
+fig, sigPlot = plt.subplots(nrows=1, ncols=n,  figsize=(4*n,6))
 fig.text(0.6, 0.01, 'f [Hz]', ha='center', fontsize=12)
 fig.text(0.01, 0.5, 'FFT', ha='center', rotation='vertical', fontsize=12)
 import matplotlib.lines as mlines
 
 # Create proxy artists
 data_handle = mlines.Line2D([], [], color='black', marker='o', linestyle='None', label='Data')
-pred_handle = mlines.Line2D([], [], color='blue', marker='*', linestyle='None', label='Prediction')
+pred_handle = mlines.Line2D([], [], color='blue', marker='o', linestyle='None', label='Prediction')
 
 # Add a figure-level legend
 fig.legend(handles=[pred_handle, data_handle],
            loc='upper center', ncol=3, fontsize=10, frameon=False)
+set = testSet
+f = set.get_freqs()
 
-f = testSet.get_freqs()
-
-X_params, Y_params = testSet.unscale()
+X_params, Y_params = set.unscale()
 
 for i_ in range(start,start+n):
-    X_test,Y_test = testSet[i_]
-    peak_freqs = testSet.get_peak_freqs(i_)
+    X_test,Y_test = set[i_]
+    clean_sig = set.get_clean_sig(i_)
+    peak_freqs = set.get_peak_freqs(i_)
+    # peak_freqs = [peak_freqs[0].item(), 2000, peak_freqs[2].item()]
 
     Y_pred = model(X_test.to(device))
 
-    Y_p_numpy = Y_pred.cpu().detach().numpy()
-    Y_t_numpy = Y_test.cpu().detach().numpy()
-    X_t_numpy = X_test.cpu().detach().numpy()
+    Y_pred_plot = Y_pred.cpu().detach()
+    Y_test_plot = Y_test.cpu().detach()
+    X_test_plot = X_test.cpu().detach()
 
-    X_test_plot = unscale_tensor(X_t_numpy, X_params)
-    Y_test_plot = unscale_tensor(Y_t_numpy, Y_params)
-    Y_pred_plot = unscale_tensor(Y_p_numpy, Y_params)
+    # X_test_plot = unscale_tensor(X_test_plot, X_params)
+    # Y_test_plot = unscale_tensor(Y_test_plot, Y_params)
+    # Y_pred_plot = unscale_tensor(Y_pred_plot, Y_params)
+
+    Yn = Y_test_plot.numpy()
 
     i = i_%n
 
-    sigPlot[0][i].scatter(peak_freqs, Y_test_plot,
+    sigPlot[i].scatter(peak_freqs, Yn,
                        edgecolors='black',
                        facecolors="none",
                        s=100,
@@ -195,23 +198,26 @@ for i_ in range(start,start+n):
                        linewidths=2,
                        label='Real peak heights')
 
-    sigPlot[0][i].scatter(peak_freqs, Y_pred_plot,
-                       edgecolors='red',
+    sigPlot[i].scatter(peak_freqs, Y_pred_plot.numpy(),
+                       edgecolors='blue',
                        facecolors="none",
                        s=100,
                        zorder=5,
                        linewidths=2,
                        label='Predicted peak heights')
 
-    sigPlot[1][i].semilogy(f, X_t_numpy, ".-")
+    # sigPlot[i].set_yscale('log')
+
+    sigPlot[i].plot(f, X_test_plot.numpy(), "g*")
+    # sigPlot[i].semilogy(f, clean_sig, "r.-")
 
     # Add a title (number) to each column's top subplot
-    sigPlot[0][i].set_title(f"n: {i}\n B0: {Y_test_plot[0]:.2e}")
+    sigPlot[i].set_title(f"n: {i}\n B0: {Y_test_plot[0]:.2e}")
 
-    # xbor = [1000, 3000]
-    # sigPlot[0][i].set_xlim(xbor[0],xbor[1])
-#    sigPlot[0][i].set_xticks(np.linspace(xbor[0], xbor[1], 5))  # 11 ticks between 1950 and 2050
-#    sigPlot[0][i].set_xticklabels([f"{xbor[0]:.0f}", "", "", "", f"{xbor[1]:.0f}"])
+    # xbor = [0, 4]
+    # sigPlot[i].set_xlim(xbor[0],xbor[1])
+#    sigPlot[i].set_xticks(np.linspace(xbor[0], xbor[1], 5))  # 11 ticks between 1950 and 2050
+#    sigPlot[i].set_xticklabels([f"{xbor[0]:.0f}", "", "", "", f"{xbor[1]:.0f}"])
 
 plt.tight_layout(rect=[0.03, 0.03, 1, 0.88])
 plt.show()

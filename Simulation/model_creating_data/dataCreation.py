@@ -15,7 +15,7 @@ Corresponding_Main_Peak_strength = []
 Corresponding_F_B = []
 
 
-n_trains = 1000
+n_trains = 2000
 for _ in range(n_trains):
     I0 = 50e-3  # The current amplitude in the sensor[A]
     B0 = 1e-12  # The magnetic field on the sensor [T]
@@ -59,9 +59,9 @@ for _ in range(n_tests):
 
     # The base parameters:
     I0 = 50e-3  # The current amplitude in the sensor[A]
-    B0 = 3e-12  # The magnetic field on the sensor [T]
+    B0 = 1e-12  # The magnetic field on the sensor [T]
     F_B = 15  # The magnetic field frequency [Hz]
-    noise_strength = 1e-7
+    noise_strength = 1e-10
     # Create a tuple with all the randomized parameters
     params = rand_test(I0, B0, F_B,noise_strength)
     Volt, fVolt, Signal, fSignal, Time, freq = Signal_Noise_FFts(*params)
