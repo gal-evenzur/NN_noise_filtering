@@ -147,6 +147,7 @@ trainer.run(dataloader, max_epochs=hyperVar['n_epochs'])
 
 
 # %%   PLOTTING THE FILTERING TO SEE IF IT WORKED   #
+print("Python <<<<< legit everything else (except C)\n")
 state = evaluator.run(test_loader)
 rel_errors = state.metrics["rel_error_3"]
 print(f"Relative Error (%): Left = {rel_errors[0]:.2f}, Center = {rel_errors[1]:.2f}, Right = {rel_errors[2]:.2f}")
