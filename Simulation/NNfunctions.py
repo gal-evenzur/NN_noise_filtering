@@ -80,7 +80,7 @@ class SignalDataset(Dataset):
         return len(self.X)
 
     def __getitem__(self, idx):
-        return self.X[idx], self.Y[idx]
+        return self.X[idx].unsqueeze(0), self.Y[idx]
 
     def get_freqs(self):
         return self.f

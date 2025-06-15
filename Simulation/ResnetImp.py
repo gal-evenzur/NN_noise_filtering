@@ -3,6 +3,7 @@ from NNfunctions import *
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from torch.optim import SGD, Adam
 from torchvision.models import resnet18
@@ -22,7 +23,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # %% Structure for the NN: #
 hyperVar = {
-    'lr_': 1e-6,
+    'lr': 1e-4,
     'n_epochs': 5,
     'batch_size': 32,
     'device': device,
@@ -74,10 +75,7 @@ model = ResnetRegressor1D(pretrained=True)
 # Here I Only intend to plot the losses graph so only need for basic event every 1/100 epochs
 def supervised_train(model, optim=SGD, device="cpu", rate = 0.01):
     model.to(device)
-    optimizer = optim([
-    {'params': model.backbone.parameters(), 'lr': 1e-4},
-    {'params': model.backbone.fc.parameters(), 'lr': 1e-3}
-])
+    optimizer = optim(model.parameters(), lr=hyperVar["lr"])
     criterion = nn.MSELoss()
     losses = []
     eps = []
@@ -116,7 +114,7 @@ def supervised_evaluator(model, device="cpu"):
 evaluator = supervised_evaluator(model, device=device)
 trainer = supervised_train(model, optim=hyperVar['optimizer'], device=device, rate = hyperVar["lr"])
 
-@trainer.on(Events.ITERATION_COMPLETED(every=int(hyperVar['n_epochs'] / 100)))
+@trainer.on(Events.ITERATION_COMPLETED(every=1))
 def log_training_loss(trainer):
     losses.append(trainer.state.output)
     eps.append(trainer.state.epoch)
