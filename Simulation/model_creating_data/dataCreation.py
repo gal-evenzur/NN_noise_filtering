@@ -86,9 +86,33 @@ test = {
     "F_B": Corresponding_F_B,
 }
 
+#   CREATING ONLY NOISE WITH SPECS OF TESTING #
+clear_sig = []
+clear_sig_f = []
+sig_time = []
+sig_f = []
+
+n_noise = 10
+for _ in range(10):
+
+    params = rand_test(I0, B0, F_B,noise_strength)
+    Volt, fVolt, Signal, fSignal, Time, freq = Signal_Noise_FFts(*params, only_noise=True)
+
+    real_F_B = params[2]
+
+    clear_sig_f.append(fVolt.tolist())
+    sig_f.append(fSignal.tolist())
+
+
+noise_for_test = {
+    "f_cSignal": clear_sig_f,
+    "f_noise": sig_f,
+}
+
 data = {
     "train": train,
     "test": test,
+    "noise_for_test": noise_for_test,
     "t": Time.tolist(),
     "f": freq.tolist()
 }
