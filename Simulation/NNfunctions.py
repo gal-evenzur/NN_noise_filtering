@@ -1,9 +1,8 @@
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
-from torch.optim import SGD, Adam
-from ignite.engine import Engine, Events
-from ignite.contrib.handlers import ProgressBar
+from ignite.metrics.metric import reinit__is_reduced
+from torch.utils.data import Dataset
+
 from ignite.metrics import Metric
 import json
 import numpy as np
@@ -80,7 +79,7 @@ class SignalDataset(Dataset):
         return len(self.X)
 
     def __getitem__(self, idx):
-        return self.X[idx].unsqueeze(0), self.Y[idx]
+        return self.X[idx], self.Y[idx]
 
     def get_freqs(self):
         return self.f
@@ -96,28 +95,49 @@ class SignalDataset(Dataset):
 
 
 class MeanRelativeError(Metric):
-    def __init__(self, output_transform=lambda x: x):
-        super(MeanRelativeError, self).__init__(output_transform=output_transform)
+    """
+    Calculates the Mean Relative Error (MRE) between predicted and true values.
+
+    Args:
+        output_transform (callable, optional): A function to apply to the
+            engine's process_function output to get the `y_pred` and `y` tensors.
+            Default is `lambda x: x`, assuming the engine outputs `(y_pred, y)`.
+        device (str or torch.device, optional): Specifies the device on which
+            the metric's internal state should be kept. Defaults to CPU.
+    """
+    def __init__(self, output_transform=lambda x: x, device="cpu"):
+        super(MeanRelativeError, self).__init__(output_transform=output_transform, device=device)
 
     def reset(self):
+        # Resets the metric's internal state.
         self._sum = None
         self._count = 0
 
     def update(self, output):
-        y_p, y_t = output
-        y_pred = 10 ** y_p
-        y_true = 10 ** y_t
+        """
+                Updates the metric's state with the current batch's predictions and true values.
+
+                Args:
+                    output (tuple): A tuple containing `(y_pred, y_true)` from the engine's
+                                    `output_transform`.
+                """
+
+        y_p, y_t = output[0].detach(), output[1].detach()
+
         eps = 1e-15
-        rel_error = torch.abs((y_pred - y_true) / y_true.clamp(min=eps))  # shape: [batch, 3]
+        # Calculate Rel error = Y_pred/Y_th
+        # add eps so we don't divide by 0
+        rel_error = torch.abs(y_p / (y_t + eps))  # shape: [batch, 3]
 
         if self._sum is None:
+            # rel_error.size(1) = 3
             self._sum = torch.zeros(rel_error.size(1), device=rel_error.device)
 
         self._sum += rel_error.sum(dim=0)
         self._count += rel_error.size(0)
 
     def compute(self):
-        return (100.0 * self._sum / self._count).cpu().numpy()  # shape: (3,)
+        return ( self._sum / self._count).cpu().numpy()  # shape: (3,)
 
 class RelativeErrorLoss(nn.Module):
     def __init__(self, eps=1e-8):
