@@ -8,7 +8,7 @@ import json
 import numpy as np
 from model_creating_data.fft_pink_noise import peak_heights
 
-def scale_tensor(dat_raw, log=False, norm=False, minmax=False, tensor=False):
+def scale_tensor(dat_raw, log=False, norm=False, minmax=False, tensor=False, resnet=False):
     sc_par = {}
     # print(f"data is {dat_raw.shape} - {min.shape} / ({max.shape} - {min.shape} ")
     if tensor:
@@ -33,6 +33,14 @@ def scale_tensor(dat_raw, log=False, norm=False, minmax=False, tensor=False):
         dat_raw = (dat_raw - min)/(max - min)
         sc_par['minmax'] = [min, max]
 
+    if resnet:
+        #ResNet expects input in shape (batch_size, 1, n_length)
+        # Reshape to (batch_size, 1, n_length)
+        dat_raw = dat_raw.unsqueeze(1)
+        sc_par['resnet'] = True
+
+
+
 
 
     return dat_raw, sc_par
@@ -51,11 +59,15 @@ def unscale_tensor(procss_data, params):
     if params.get('log'):
         procss_data = 10**procss_data
 
+    if params.get('resnet'):
+        # Reshape to (batch_size, n_length)
+        procss_data = procss_data.squeeze()
+
     return procss_data
 
 
 class SignalDataset(Dataset):
-    def __init__(self, json_path, split="train", transfrom=scale_tensor):
+    def __init__(self, json_path, split="train", transfrom=scale_tensor, resnet=False):
 
         with open(json_path, "r") as f:
             dat = json.load(f)
@@ -70,7 +82,7 @@ class SignalDataset(Dataset):
 
         amps = peak_heights(clean_raw, f_b=self.F_B, f_center=2000, dir=False)
 
-        self.X, self.X_scale = transfrom(sig_raw, log=True, norm=True, tensor=True)
+        self.X, self.X_scale = transfrom(sig_raw, log=True, norm=True, tensor=True, resnet=resnet)
         self.Y, self.Y_scale = transfrom(amps, log=True, tensor=True)
 
         self.f = torch.FloatTensor(dat["f"])

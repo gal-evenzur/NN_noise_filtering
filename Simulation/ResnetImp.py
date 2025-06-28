@@ -3,15 +3,15 @@ from NNfunctions import *
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from torch.optim import SGD, Adam
-from torchvision.models import resnet18
-
 from ignite.engine import Engine, Events
 from ignite.contrib.handlers import ProgressBar
 from ignite.metrics import Loss
 import matplotlib
+
+from resnet1d_master.resnet1d import ResNet1D
+
 matplotlib.use('TkAgg')  # or 'Agg' for testing headless
 
 import matplotlib.pyplot as plt
@@ -20,83 +20,41 @@ import numpy as np
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
-# %% Structure for the NN: #
+# %% Parameters
 hyperVar = {
-    'lr': 1e-4,
-    'n_epochs': 20,
-    'batch_size': 64,
+    'lr': 1e-2,
+    'n_epochs': 5,
+    'batch_size': 32,
     'device': device,
     'n_plotted': 10,
-    'start': 10,
+    'start': 0,
     'optimizer': Adam,
+    'unscaled_plot': True,
             }
 
+# %% Structure for the NN: #
 
-class BasicBlock1D(nn.Module):
-    def __init__(self, in_planes, planes, stride=1):
-        super().__init__()
-        self.conv1 = nn.Conv1d(in_planes, planes, kernel_size=3, stride=stride, padding=1)
-        self.bn1 = nn.BatchNorm1d(planes)
-        self.conv2 = nn.Conv1d(planes, planes, kernel_size=3, stride=1, padding=1)
-        self.bn2 = nn.BatchNorm1d(planes)
-
-        self.shortcut = nn.Sequential()
-        if stride != 1 or in_planes != planes:
-            self.shortcut = nn.Sequential(
-                nn.Conv1d(in_planes, planes, kernel_size=1, stride=stride),
-                nn.BatchNorm1d(planes)
-            )
-
-    def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = self.bn2(self.conv2(out))
-        out += self.shortcut(x)
-        return F.relu(out)
-
-class ResNet18_1D(nn.Module):
-    def __init__(self, block, num_blocks, num_classes=3):
-        super().__init__()
-        self.in_planes = 64
-
-        self.conv1 = nn.Conv1d(1, 64, kernel_size=7, stride=2, padding=3)
-        self.bn1 = nn.BatchNorm1d(64)
-
-        self.layer1 = self._make_layer(block, 64,  num_blocks[0], stride=1)
-        self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
-
-        self.avgpool = nn.AdaptiveAvgPool1d(1)
-        self.fc = nn.Linear(512, num_classes)
-
-    def _make_layer(self, block, planes, num_blocks, stride):
-        layers = [block(self.in_planes, planes, stride)]
-        self.in_planes = planes
-        for _ in range(1, num_blocks):
-            layers.append(block(planes, planes))
-        return nn.Sequential(*layers)
-
-    def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = self.layer1(out)
-        out = self.layer2(out)
-        out = self.layer3(out)
-        out = self.layer4(out)
-        out = self.avgpool(out).squeeze(-1)
-        out = self.fc(out)
-        return out
-
-def resnet18_1d(num_classes=3):
-    return ResNet18_1D(BasicBlock1D, [2, 2, 2, 2], num_classes)
-
+model = ResNet1D(
+    in_channels=1,
+    base_filters=128,
+    kernel_size=16,
+    stride=2,
+    n_block=18,
+    groups=1,
+    n_classes=3,
+    downsample_gap=6,
+    increasefilter_gap=12,
+    use_bn=True,
+    use_do=True,
+    verbose=False)
+model.to(device)
 
 
 
 # %% First, IMPORTING DATA #
 
-trainSet = SignalDataset('model_creating_data/data.json', split="train")
-testSet = SignalDataset('model_creating_data/data.json', split="test")
+trainSet = SignalDataset('model_creating_data/data.json', split="train", resnet=True)
+testSet = SignalDataset('model_creating_data/data.json', split="test", resnet=True)
 
 dataloader = DataLoader(trainSet, batch_size=hyperVar["batch_size"], shuffle=True)
 test_loader = DataLoader(testSet, batch_size=hyperVar["batch_size"], shuffle=True)
@@ -106,11 +64,12 @@ test_loader = DataLoader(testSet, batch_size=hyperVar["batch_size"], shuffle=Tru
 
 losses = []
 eps = []
-model = resnet18_1d()
+
+
 # Here I Only intend to plot the losses graph so only need for basic event every 1/100 epochs
-def supervised_train(model, optim=SGD, device="cpu", rate = 0.01):
+def supervised_train(model, rate, optim, device="cpu"):
     model.to(device)
-    optimizer = optim(model.parameters(), lr=hyperVar["lr"])
+    optimizer = optim(model.parameters(), lr = rate)
     criterion = nn.MSELoss()
     losses = []
     eps = []
@@ -129,8 +88,8 @@ def supervised_train(model, optim=SGD, device="cpu", rate = 0.01):
 
     return Engine(_update)
 
-# Not really relevent for now and not used
-def supervised_evaluator(model, device="cpu"):
+
+def supervised_evaluator(model, device="cpu", scaling_params=None):
 
     def _interference(engine, batch):
         model.eval()
@@ -143,11 +102,25 @@ def supervised_evaluator(model, device="cpu"):
 
     engine = Engine(_interference)
 
-    MeanRelativeError().attach(engine, 'rel_error_3')
+    if scaling_params:
+        def apply_unscaling(output):
+            y_pred_scaled = unscale_tensor(output[0], scaling_params)
+            y_true_scaled = unscale_tensor(output[1], scaling_params)
+            return y_pred_scaled, y_true_scaled
+
+        transform_func = apply_unscaling
+    else:
+        transform_func = lambda x: x
+
+    MeanRelativeError(
+        output_transform=transform_func, device=device
+    ).attach(engine, 'rel_error_3')
     return engine
 
-evaluator = supervised_evaluator(model, device=device)
 trainer = supervised_train(model, optim=hyperVar['optimizer'], device=device, rate = hyperVar["lr"])
+
+X_parms, Y_parms = testSet.unscale()
+evaluator = supervised_evaluator(model, device=device, scaling_params=Y_parms)
 
 @trainer.on(Events.ITERATION_COMPLETED(every=1))
 def log_training_loss(trainer):
@@ -172,7 +145,8 @@ trainer.run(dataloader, max_epochs=hyperVar['n_epochs'])
 print("Python <<<<< legit everything else (except C)\n")
 state = evaluator.run(test_loader)
 rel_errors = state.metrics["rel_error_3"]
-print(f"Relative Error (%): Left = {rel_errors[0]:.2f}, Center = {rel_errors[1]:.2f}, Right = {rel_errors[2]:.2f}")
+print(f"Relative Error (%) Y_pred / Y_true: Left = {rel_errors[0]:.2f}, Center = {rel_errors[1]:.2f}, Right = {rel_errors[2]:.2f}")
+
 
 # Seeing how the losses change:
 plt.figure()
@@ -180,6 +154,7 @@ plt.semilogy(eps, losses)
 plt.title("Loss vs. Epochs")
 plt.xlabel("Epochs")
 plt.ylabel("Loss")
+print("Losses printed, now plotting the graphs\n")
 
 # Plotting the dots:
 n = hyperVar['n_plotted']
@@ -208,24 +183,26 @@ for i_ in range(start,start+n):
     peak_freqs = set.get_peak_freqs(i_)
     # peak_freqs = [peak_freqs[0].item(), 2000, peak_freqs[2].item()]
 
-    if X_test.ndim == 2:
-        X_test = X_test.unsqueeze(0)
-
+    X_test = X_test.unsqueeze(0)  # Reshape to [1, channels, length] for ResNet
     Y_pred = model(X_test.to(device))
 
-    Y_pred_plot = Y_pred.cpu().detach().squeeze()
-    Y_test_plot = Y_test.cpu().detach().squeeze()
-    X_test_plot = X_test.cpu().detach().squeeze()
+    X_test_plot = X_test.squeeze()
+    Y_test_plot = Y_test
+    Y_pred_plot = Y_pred
 
-    X_test_plot = unscale_tensor(X_test_plot, X_params)
-    Y_test_plot = unscale_tensor(Y_test_plot, Y_params)
-    Y_pred_plot = unscale_tensor(Y_pred_plot, Y_params)
+    if hyperVar['unscaled_plot']:
+        X_test_plot = unscale_tensor(X_test_plot, X_params)
+        Y_test_plot = unscale_tensor(Y_test_plot, Y_params)
+        Y_pred_plot = unscale_tensor(Y_pred_plot, Y_params)
 
-    Yn = Y_test_plot.numpy()
+    Y_pred_plot = Y_pred_plot.cpu().detach().numpy()
+    Y_test_plot = Y_test_plot.cpu().detach().numpy()
+    X_test_plot = X_test_plot.cpu().detach().numpy()
+
 
     i = i_%n
 
-    sigPlot[i].scatter(peak_freqs, Yn,
+    sigPlot[i].scatter(peak_freqs, Y_test_plot,
                        edgecolors='black',
                        facecolors="none",
                        s=100,
@@ -233,7 +210,7 @@ for i_ in range(start,start+n):
                        linewidths=2,
                        label='Real peak heights')
 
-    sigPlot[i].scatter(peak_freqs, Y_pred_plot.numpy(),
+    sigPlot[i].scatter(peak_freqs, Y_pred_plot,
                        edgecolors='blue',
                        facecolors="none",
                        s=100,
@@ -241,10 +218,11 @@ for i_ in range(start,start+n):
                        linewidths=2,
                        label='Predicted peak heights')
 
-    sigPlot[i].set_yscale('log')
+    if hyperVar['unscaled_plot']:
+        sigPlot[i].set_yscale('log')
 
-    sigPlot[i].plot(f, X_test_plot.numpy(), "g*")
-    sigPlot[i].semilogy(f, clean_sig, "r.-")
+    sigPlot[i].plot(f, X_test_plot, "g*")
+    sigPlot[i].plot(f, clean_sig, "r.-")
 
     # Add a title (number) to each column's top subplot
     sigPlot[i].set_title(f"n: {i}\n B0: {Y_test_plot[0]:.2e}")
