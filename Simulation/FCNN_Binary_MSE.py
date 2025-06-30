@@ -20,7 +20,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # %% Parameters
 hyperVar = {
     'lr': 1e-5,
-    'n_epochs': 100,
+    'n_epochs': 20,
     'batch_size': 32,
     'device': device,
     'n_plotted': 10,
@@ -115,6 +115,12 @@ def supervised_evaluator(model, device="cpu", scaling_params=None):
     MeanRelativeError(
         output_transform=transform_func, device=device
     ).attach(engine, 'rel_error_3')
+
+    # Attach MDEPerIntensity metric
+    MDEPerIntensity(
+        output_transform=transform_func, device=device
+    ).attach(engine, 'mde_per_intensity')
+
     return engine
 
 trainer = supervised_train(model, optim=hyperVar['optimizer'], device=device, rate = hyperVar["lr"])
@@ -146,6 +152,24 @@ print("Python <<<<< legit everything else (except C)\n")
 state = evaluator.run(test_loader)
 rel_errors = state.metrics["rel_error_3"]
 print(f"Relative Error (%) Y_pred / Y_true: Left = {rel_errors[0]:.2f}, Center = {rel_errors[1]:.2f}, Right = {rel_errors[2]:.2f}")
+
+# Plotting MDEPerIntensity
+intensities, diffs = state.metrics["mde_per_intensity"]  # intensities: [N,], diffs: [N,3]
+# Convert to numpy if not already
+intensities = intensities.cpu().numpy()
+diffs = diffs.cpu().numpy() * 10**12  # Convert to pT for better readability
+
+plt.figure(figsize=(10, 6))
+plt.grid(True)
+plt.yscale('log')  # Log scale for better visibility of differences
+
+# plt.plot(intensities, diffs[:, 1], 'b.', label='Center Peak')
+plt.plot(intensities, diffs[:, 0], 'r.', label='Left Peak')
+plt.plot(intensities, diffs[:, 2], 'g.',label='Right Peak')
+plt.title("Mean Deviation Error per Intensity")
+plt.xlabel("Intensity (B0) [T]")
+plt.ylabel("Mean Deviation Error [pT]")
+plt.legend()
 
 # Seeing how the losses change:
 plt.figure()

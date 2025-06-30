@@ -151,11 +151,46 @@ class MeanRelativeError(Metric):
     def compute(self):
         return ( self._sum / self._count).cpu().numpy()  # shape: (3,)
 
-class RelativeErrorLoss(nn.Module):
-    def __init__(self, eps=1e-8):
-        super().__init__()
-        self.eps = eps
 
-    def forward(self, y_pred, y_true):
-        rel_error = torch.abs((y_pred - y_true) / (y_true.clamp(min=self.eps)))
-        return rel_error.mean()  # mean over batch and components
+
+class MDEPerIntensity(Metric):
+    """
+    Calculates the Mean Difference Error (MDE) Per Intensity of magnetic field
+
+    Args:
+        output_transform (callable, optional): A function to apply to the
+            engine's process_function output to get the `y_pred` and `y` tensors.
+            Default is `lambda x: x`, assuming the engine outputs `(y_pred, y)`.
+        device (str or torch.device, optional): Specifies the device on which
+            the metric's internal state should be kept. Defaults to CPU.
+    """
+    def __init__(self, output_transform=lambda x: x, device="cpu"):
+        super(MDEPerIntensity, self).__init__(output_transform=output_transform, device=device)
+
+    def reset(self):
+        # Store all intensities and differences for plotting
+        self._intensities = []
+        self._diffs = []
+
+    def update(self, output):
+        """
+        Updates the metric's state with the current batch's predictions and true values.
+
+        Args:
+            output (tuple): A tuple containing `(y_pred, y_true)`
+            after applying output_transform.
+        """
+        y_p, y_t = output[0].detach(), output[1].detach()
+        # y_t and y_p: [batch_size, 3]
+        # Intensity is y_t[:, 0] (or y_t[:, 2])
+        intensities = y_t[:, 0]
+        diffs = (y_p - y_t)  # shape: [batch_size, 3]
+
+        self._intensities.append(intensities)
+        self._diffs.append(diffs)
+
+    def compute(self):
+        # Concatenate all batches
+        intensities = torch.concatenate(self._intensities, dim=0)  # shape: [N,]
+        diffs = torch.concatenate(self._diffs, dim=0)              # shape: [N, 3]
+        return intensities, diffs
