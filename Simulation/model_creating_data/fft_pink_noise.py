@@ -73,10 +73,10 @@ def make_noise(dt, n_power, p_perc):
 
 def rand_train(I0, B0, F_B, noise_strength):
     I0_r = I0 * random.uniform(0.1, 5)
-    B0_r = B0 * random.uniform(0.1, 10)
+    B0_r = B0 * random.uniform(1, 20)
     F_B_r = random.randint(F_B - 5, F_B + 20)
-    noise_strength_r = noise_strength*random.uniform(0.8, 1.4)
-    pink_percentage = np.abs(normal(0, 0.5))
+    noise_strength_r = noise_strength*random.uniform(0.5, 1.4)
+    pink_percentage = 0
 
     return I0_r, B0_r, F_B_r, noise_strength_r, pink_percentage
 
@@ -84,13 +84,13 @@ def rand_train(I0, B0, F_B, noise_strength):
 def rand_test(I0, B0, F_B, noise_strength):
     I0_r = I0 + normal(0, var(0.1*I0))
     B0_r = B0 * random.uniform(0.25, 3)
-    F_B_r = F_B
+    F_B_r = random.randint(F_B - 5, F_B + 5)
     noise_strength_r = noise_strength
     pink_percentage = 0
 
     return I0_r, B0_r, F_B_r, noise_strength_r, pink_percentage
 
-def Signal_Noise_FFts(I0, B0, F_B, noise_strength, pink_percentage, is_padding=False, is_window=False):
+def Signal_Noise_FFts(I0, B0, F_B, noise_strength, pink_percentage, is_padding=False, is_window=False, only_noise=False):
     #I0 The current amplitude in the sensor[A]
     #B0 = The magnetic field on the sensor [T]
     #F_B  The magnetic field frequency [Hz]
@@ -119,6 +119,10 @@ def Signal_Noise_FFts(I0, B0, F_B, noise_strength, pink_percentage, is_padding=F
     hh = BB / B_k
 
     Voltage = (II / thickness) * ((rho_perp + delta_rho - delta_rho * (hh ** 2)) * (LL / WW) + delta_rho * hh)
+
+    # If only noise is needed, return it without FFT
+    if only_noise:
+        Voltage = np.zeros_like(Voltage)
 
     if is_window:
         # Window the signal to prevent spectal leakage when padding

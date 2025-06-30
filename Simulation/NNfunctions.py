@@ -152,7 +152,6 @@ class MeanRelativeError(Metric):
         return ( self._sum / self._count).cpu().numpy()  # shape: (3,)
 
 
-
 class MDEPerIntensity(Metric):
     """
     Calculates the Mean Difference Error (MDE) Per Intensity of magnetic field
@@ -194,3 +193,8 @@ class MDEPerIntensity(Metric):
         intensities = torch.concatenate(self._intensities, dim=0)  # shape: [N,]
         diffs = torch.concatenate(self._diffs, dim=0)              # shape: [N, 3]
         return intensities, diffs
+
+
+def score_function(engine):
+    # Lower loss is better, so return negative loss
+    return -engine.state.metrics['loss']

@@ -5,12 +5,14 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from torch.optim import SGD, Adam
+
 from ignite.engine import Engine, Events
+from ignite.handlers import EarlyStopping
 from ignite.contrib.handlers import ProgressBar
 from ignite.metrics import Loss
+
 import matplotlib
 matplotlib.use('TkAgg')  # or 'Agg' for testing headless
-
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -19,15 +21,32 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # %% Parameters
 hyperVar = {
-    'lr': 1e-5,
-    'n_epochs': 20,
+    # Data parameters
     'batch_size': 32,
     'device': device,
+
+    # Training parameters
+    'optimizer': Adam,
+    'lr': 1e-5,
+    'n_epochs': 100,
+    'patience': 5,
+
+    # Plotting parameters
     'n_plotted': 10,
     'start': 0,
-    'optimizer': Adam,
     'unscaled_plot': True,
             }
+
+# %% First, IMPORTING DATA #
+
+trainSet = SignalDataset('model_creating_data/data.json', split="train")
+validateSet = SignalDataset('model_creating_data/data.json', split="validate")
+testSet = SignalDataset('model_creating_data/data.json', split="test")
+
+dataloader = DataLoader(trainSet, batch_size=hyperVar["batch_size"], shuffle=True)
+validate_loader = DataLoader(validateSet, batch_size=hyperVar["batch_size"], shuffle=False)
+test_loader = DataLoader(testSet, batch_size=hyperVar["batch_size"], shuffle=False)
+
 
 # %% Structure for the NN: #
 
@@ -37,9 +56,7 @@ class PeakHeightRegressor(nn.Module):
 
         self.linear_stack = nn.Sequential(
             nn.Linear(f_signal, h1),
-            nn.ReLU(),
             nn.Linear(h1, h2),
-            nn.ReLU(),
             nn.Linear(h2, output),
 
         )
@@ -51,26 +68,17 @@ class PeakHeightRegressor(nn.Module):
 
 
 
-
-# %% First, IMPORTING DATA #
-
-trainSet = SignalDataset('model_creating_data/data.json', split="train")
-testSet = SignalDataset('model_creating_data/data.json', split="test")
-
-dataloader = DataLoader(trainSet, batch_size=hyperVar["batch_size"], shuffle=True)
-test_loader = DataLoader(testSet, batch_size=hyperVar["batch_size"], shuffle=True)
-
-
 # %% Defining training engine and Events
 
 losses = []
+val_losses = []
 eps = []
 model = PeakHeightRegressor()
+criterion = nn.MSELoss()
 # Here I Only intend to plot the losses graph so only need for basic event every 1/100 epochs
 def supervised_train(model, rate, optim, device="cpu"):
     model.to(device)
     optimizer = optim(model.parameters(), lr = rate)
-    criterion = nn.MSELoss()
     losses = []
     eps = []
 
@@ -87,7 +95,6 @@ def supervised_train(model, rate, optim, device="cpu"):
         return loss.item()
 
     return Engine(_update)
-
 
 def supervised_evaluator(model, device="cpu", scaling_params=None):
 
@@ -112,6 +119,12 @@ def supervised_evaluator(model, device="cpu", scaling_params=None):
     else:
         transform_func = lambda x: x
 
+    # Attach loss metric
+    Loss(criterion,
+        output_transform=lambda x: (x[0], x[1])
+    ).attach(engine, 'loss')
+
+    # Attach Mean Relative Error metric
     MeanRelativeError(
         output_transform=transform_func, device=device
     ).attach(engine, 'rel_error_3')
@@ -128,17 +141,24 @@ trainer = supervised_train(model, optim=hyperVar['optimizer'], device=device, ra
 X_parms, Y_parms = testSet.unscale()
 evaluator = supervised_evaluator(model, device=device, scaling_params=Y_parms)
 
-@trainer.on(Events.ITERATION_COMPLETED(every=int(hyperVar['n_epochs'] / 10)))
-def log_training_loss(trainer):
-    losses.append(trainer.state.output)
-    eps.append(trainer.state.epoch)
+handler = EarlyStopping(
+    patience=hyperVar['patience'],  # Number of epochs to wait for improvement
+    score_function=score_function,
+    trainer=trainer
+)
+evaluator.add_event_handler(Events.COMPLETED, handler)
 
-# @trainer.on(Events.ITERATION_COMPLETED(every=int(n_epochs/50)))
-# def early_stopping(trainer):
-#     if trainer.state.output < 10**-8:
-#         losses.append(trainer.state.output)
-#         eps.append(trainer.state.epoch)
-#         trainer.terminate()
+@trainer.on(Events.EPOCH_COMPLETED)
+def run_validation_loss_track(engine):
+    # Track losses for plotting
+    eps.append(trainer.state.epoch)
+    losses.append(trainer.state.output)
+
+    # Run validation
+    evaluator.run(validate_loader)
+    val_losses.append(evaluator.state.metrics['loss'])
+
+
 
 ProgressBar().attach(trainer, output_transform=lambda x: {'loss': x})
 
@@ -161,11 +181,14 @@ diffs = diffs.cpu().numpy() * 10**12  # Convert to pT for better readability
 
 plt.figure(figsize=(10, 6))
 plt.grid(True)
-plt.yscale('log')  # Log scale for better visibility of differences
+plt.yscale('symlog', linthresh=1e-2)  # Log scale for better visibility of differences
 
 # plt.plot(intensities, diffs[:, 1], 'b.', label='Center Peak')
 plt.plot(intensities, diffs[:, 0], 'r.', label='Left Peak')
 plt.plot(intensities, diffs[:, 2], 'g.',label='Right Peak')
+# Connect left and right dots for each intensity
+for i in range(len(intensities)):
+    plt.plot([intensities[i], intensities[i]], [diffs[i, 0], diffs[i, 2]], 'k-', alpha=0.5)
 plt.title("Mean Deviation Error per Intensity")
 plt.xlabel("Intensity (B0) [T]")
 plt.ylabel("Mean Deviation Error [pT]")
@@ -173,10 +196,12 @@ plt.legend()
 
 # Seeing how the losses change:
 plt.figure()
-plt.semilogy(eps, losses)
+plt.semilogy(eps, losses, label='Training Loss')
+plt.semilogy(eps, val_losses, '--g', label='Validation Loss')
 plt.title("Loss vs. Epochs")
 plt.xlabel("Epochs")
 plt.ylabel("Loss")
+plt.legend()
 
 # Plotting the dots:
 n = hyperVar['n_plotted']
