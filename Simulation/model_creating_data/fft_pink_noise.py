@@ -10,66 +10,87 @@ def var(reducer):
     # Returns Variance for which White noise will fall 95% between +- reducer
     return reducer/1.96
 
-def make_fft(data, rate, num):
+def make_fft(data, rate, num, use_torch=False):
     Fs = rate  # Sampling frequency
     L = num  # Length of signal
 
+    if use_torch:
+        fft_fn = torch.fft.fft
+        backend = torch
+        # PyTorch requires explicit dtype for arange
+        arange_fn = lambda start, stop: torch.arange(start, stop, dtype=torch.float32)
+    else:
+        fft_fn = np.fft.fft
+        backend = np
+        arange_fn = np.arange
+
     # Compute the Fourier transform of the signal
-    Y = np.fft.fft(data)
+    Y = fft_fn(data)
 
     # Compute the two-sided spectrum P2. Then compute the single-sided spectrum P1
     # based on P2 and the even-valued signal length L
-    P2 = np.abs(Y / L)
+    P2 = backend.abs(Y / L)
     P1 = P2[:L // 2 + 1]
     P1[1:-1] = 2 * P1[1:-1]  # Double the amplitudes except DC and Nyquist
 
     # Define the frequency domain f
-    f = Fs * np.arange(0, L // 2 + 1) / L
+    f = Fs * arange_fn(0, L // 2 + 1) / L
 
     return f, P1
 
-def make_pink_noise(t, sigma):
+def make_pink_noise(t, sigma, use_torch=False):
     L = len(t)
     d = t[1] - t[0]
     rate = 1/d
-    white_noise = np.random.normal(0, sigma, L)
 
-    fwNoise = np.fft.rfft(white_noise)
-    freq = rate/L * np.arange(0, int(L/2) + 1)
+    if use_torch:
+        random_normal = lambda _, std, size: torch.randn(size) * std
+        rfft = torch.fft.rfft
+        irfft = torch.fft.irfft
+        arange = lambda start, stop: torch.arange(start, stop, dtype=torch.float32)
+        mean = torch.mean
+    else:
+        random_normal = np.random.normal
+        rfft = np.fft.rfft
+        irfft = np.fft.irfft
+        arange = np.arange
+        mean = np.mean
+
+    white_noise = random_normal(0, sigma, L)
+
+    fwNoise = rfft(white_noise)
+    freq = rate/L * arange(0, int(L/2) + 1)
 
 
     freq[0] = freq[1]  # Avoid division by zero at DC
     fwNoise = fwNoise / (freq)**0.5
 
-    pink_noise = np.fft.irfft(fwNoise)
+    pink_noise = irfft(fwNoise)
 
     # 6. Normalize to zero mean and unit variance (optional but useful)
-    pink_noise -= np.mean(pink_noise)
+    pink_noise -= mean(pink_noise)
 
     return pink_noise
 
-def make_noise(Time, n_power, p_perc):
-    n = np.size(Time)
+def make_noise(Time, n_power, p_perc, use_torch=False):
+    n = len(Time)
 
     #   CREATING NOISES     #
     Noise_variance = var(n_power)
 
-    wNoise = np.random.normal(0, Noise_variance, n)
-    # _, fwNoise = make_fft(wNoise, Time)
-    # _, S_wNoise = welch(wNoise, 1/dt, nperseg=n)
+    if use_torch:
+        wNoise = torch.randn(n) * Noise_variance
+    else:
+        wNoise = np.random.normal(0, Noise_variance, n)
+        wNoise = np.random.randn(n) * Noise_variance
 
     # Using filtering in DFT Domain
-    pNoise = make_pink_noise(Time, Noise_variance)
-    # _, S_pNoise = welch(pNoise, 1/dt, nperseg=n)
-    # _, fpNoise = make_fft(pNoise, Time)
-
-    # Pink Using a library
-    # pNoise = colorednoise.powerlaw_psd_gaussian(1, n) * Noise_var
+    pNoise = make_pink_noise(Time, Noise_variance, use_torch=use_torch)
 
     Noise = p_perc * pNoise + (1 - p_perc) * wNoise
-    # _, fNoise = make_fft(Noise, Time)
 
     return Noise, pNoise, wNoise
+
 
 def rand_train(I0, B0, F_B, noise_strength):
     I0_r = I0 * random.uniform(0.1, 5)
@@ -91,7 +112,7 @@ def rand_test(I0, B0, F_B, noise_strength):
     return I0_r, B0_r, F_B_r, noise_strength_r, pink_percentage
 
 
-def generate_voltage_signal(I0, B0, F_B, dt, start_time, end_time):
+def generate_voltage_signal(I0, B0, F_B, dt, start_time, end_time, use_torch=False):
     rho_perp = 2.7e-7  # [ohm * m]
     AMRR = 0.02  # AMR ratio (rho_par-rho_perp)/rho_perp
     B_k = 10e-4  # [T] Difference of resistance for parallel B vs Perp B
@@ -102,13 +123,15 @@ def generate_voltage_signal(I0, B0, F_B, dt, start_time, end_time):
     WW = 600e-6  # The width of the sensor [m]
     F_c = 2000  # The frequency of the current in the sensor [Hz]
 
+    backend = torch if use_torch else np
+
     # Time vector
-    Time = np.arange(start_time, end_time, dt)
+    Time = backend.arange(start_time, end_time, dt)
 
     # Calculate voltage signal
     delta_rho = rho_perp * AMRR  # [ohm * m]
-    BB = B0 * np.sin(2 * np.pi * F_B * Time)
-    II = I0 * np.sin(2 * np.pi * F_c * Time)
+    BB = B0 * backend.sin(2 * np.pi * F_B * Time)
+    II = I0 * backend.sin(2 * np.pi * F_c * Time)
     hh = BB / B_k
 
     Voltage = (II / thickness) * ((rho_perp + delta_rho - delta_rho * (hh ** 2)) * (LL / WW) + delta_rho * hh)
@@ -122,36 +145,46 @@ def Signal_Noise_FFts(I0, B0, F_B, noise_strength,
                         end_time=1,
                         is_padding=False,
                         is_window=False,
-                        only_noise=False):
+                        only_noise=False,
+                        use_torch=False):
     #I0 The current amplitude in the sensor[A]
     #B0 = The magnetic field on the sensor [T]
     #F_B  The magnetic field frequency [Hz]
     #noise_strength = 2.5e-5  # Noise will be 95% of times in this +-range
 
+    if use_torch:
+        zeros_like = torch.zeros_like
+        hanning = torch.hann_window
+        pad = lambda data, pad_width: torch.nn.functional.pad(data, (0, pad_width))
+    else:
+        zeros_like = np.zeros_like
+        hanning = np.hanning
+        pad = lambda data, pad_width: np.pad(data, (0, pad_width))
+
     #    CONSTS      #
     # Create a voltage signal from a PHE sensor
 
-    Voltage, Time = generate_voltage_signal(I0, B0, F_B, dt, start_time, end_time)
+    Voltage, Time = generate_voltage_signal(I0, B0, F_B, dt, start_time, end_time, use_torch=use_torch)
 
     # If only noise is needed, return it without FFT
     if only_noise:
-        Voltage = np.zeros_like(Voltage)
+        Voltage = zeros_like(Voltage)
 
     if is_window:
         # Window the signal to prevent spectal leakage when padding
-        window = np.hanning(len(Voltage))
+        window = hanning(len(Voltage))
         Voltage = window * Voltage
 
     if is_padding:
         # Padding so the peaks aren't as sharp
-        n = np.ceil(np.log2(len(Voltage)))
-        Voltage = np.pad(Voltage, (0,len(Voltage)*4))
+        pad_amount = len(Voltage) * 4
+        Voltage = pad(Voltage, pad_amount)
 
 
-    f, P1 = make_fft(Voltage, 1 / dt, len(Voltage))
+    f, P1 = make_fft(Voltage, 1 / dt, len(Voltage), use_torch=use_torch)
 
     #   CREATING NOISES     #
-    Noise, *_ = make_noise(Time, noise_strength, pink_percentage)
+    Noise, *_ = make_noise(Time, noise_strength, pink_percentage, use_torch=use_torch)
 
 
     #   COMBINED SIGNAL   #
@@ -159,26 +192,25 @@ def Signal_Noise_FFts(I0, B0, F_B, noise_strength,
 
     if is_window:
         # Window the signal to prevent spectal leakage when padding
-        window = np.hanning(len(Signal))
+        window = hanning(len(Signal))
         Signal = window * Signal
 
     if is_padding:
         # Padding so the peaks aren't as sharp
-        n = np.ceil(np.log2(len(Signal)))
-        Signal = np.pad(Signal, (0,len(Signal)*4))
+        pad_amount = len(Signal) * 4
+        Signal = pad(Signal, pad_amount)
 
-    _, fSignal = make_fft(Signal, 1/dt, len(Signal))
+    _, fSignal = make_fft(Signal, 1/dt, len(Signal), use_torch=use_torch)
 
     return Voltage, P1, Signal, fSignal, Time, f
 
 
 def my_stft(I0, B0, F_B, noise_strength,
-
             fs, total_cycles, overlap=0.75, cycles_per_window=4,
-
             Tperiod=None,
             only_center=False,
-            only_noise=False):
+            only_noise=False,
+            use_torch=True):
 
     dt = 1 / fs
     freqs = [2000 - F_B, 2000, 2000 + F_B]  # Frequencies of interest
@@ -195,9 +227,10 @@ def my_stft(I0, B0, F_B, noise_strength,
     _, _, Signal, _, Time, _ = Signal_Noise_FFts(I0, B0, F_B, noise_strength,
                                dt=dt,
                                start_time=0,
-                               end_time=end_time)
-
-    Signal = torch.from_numpy(Signal)
+                               end_time=end_time,
+                               use_torch=use_torch)
+    if not use_torch:
+        Signal = torch.from_numpy(Signal).to(torch.float32)
 
     N_samples_period = int(fs * Tperiod)  # Number of samples in one period
     n_fft = N_samples_period * cycles_per_window
@@ -213,17 +246,18 @@ def my_stft(I0, B0, F_B, noise_strength,
 
     # Frequency axis for STFT
     freqs_stft = np.linspace(0, fs // 2, n_fft // 2 + 1)
+    time_bins = np.linspace(0, total_cycles * Tperiod, mag.shape[1])
 
     if only_center:
         # Return only around the center frequency (2000 Hz)
 
         freq_mask = (freqs_stft >= 1900) & (freqs_stft <= 2100)
         freqs_zoom = freqs_stft[freq_mask]
-        mag_zoom = mag[freq_mask, :]
+        mag_zoom = mag[freq_mask, :].numpy()
 
-        return mag_zoom, freqs_zoom
+        return mag_zoom, freqs_zoom, time_bins
 
-    return mag, freqs_stft
+    return mag.numpy(), freqs_stft, time_bins
 
 
 def peak_heights(clear_signal, f_b, f_center, dir=False):
@@ -258,5 +292,3 @@ def peak_heights(clear_signal, f_b, f_center, dir=False):
         return peaks
     else:
         return result
-
-
