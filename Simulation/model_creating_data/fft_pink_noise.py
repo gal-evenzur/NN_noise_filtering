@@ -1,5 +1,6 @@
 import random
-
+from math import gcd
+from functools import reduce
 import numpy as np
 import torch
 from numpy.random import normal as normal
@@ -169,6 +170,61 @@ def Signal_Noise_FFts(I0, B0, F_B, noise_strength,
     _, fSignal = make_fft(Signal, 1/dt, len(Signal))
 
     return Voltage, P1, Signal, fSignal, Time, f
+
+
+def my_stft(I0, B0, F_B, noise_strength,
+
+            fs, total_cycles, overlap=0.75, cycles_per_window=4,
+
+            Tperiod=None,
+            only_center=False,
+            only_noise=False):
+
+    dt = 1 / fs
+    freqs = [2000 - F_B, 2000, 2000 + F_B]  # Frequencies of interest
+
+    # Period is 1 / GCD of all frequency components
+    if Tperiod is None:
+        # Compute GCD
+        freq_gcd = reduce(gcd, freqs)
+        Tperiod = 1 / freq_gcd
+
+
+    end_time = Tperiod * total_cycles
+
+    _, _, Signal, _, Time, _ = Signal_Noise_FFts(I0, B0, F_B, noise_strength,
+                               dt=dt,
+                               start_time=0,
+                               end_time=end_time)
+
+    Signal = torch.from_numpy(Signal)
+
+    N_samples_period = int(fs * Tperiod)  # Number of samples in one period
+    n_fft = N_samples_period * cycles_per_window
+
+    # calculate hop length based on overlap percentage
+    hop_length = int(n_fft * (1 - overlap))
+
+    stft_result = torch.stft(Signal, n_fft=n_fft, hop_length=hop_length,
+                             return_complex=True,
+                             center=False)
+
+    mag = stft_result.abs()
+
+    # Frequency axis for STFT
+    freqs_stft = np.linspace(0, fs // 2, n_fft // 2 + 1)
+
+    if only_center:
+        # Return only around the center frequency (2000 Hz)
+
+        freq_mask = (freqs_stft >= 1900) & (freqs_stft <= 2100)
+        freqs_zoom = freqs_stft[freq_mask]
+        mag_zoom = mag[freq_mask, :]
+
+        return mag_zoom, freqs_zoom
+
+    return mag, freqs_stft
+
 
 def peak_heights(clear_signal, f_b, f_center, dir=False):
     # Receives a Tensor, and returns the height of each of the peaks in the signal
