@@ -213,17 +213,18 @@ def my_stft(I0, B0, F_B, noise_strength,
 
     # Frequency axis for STFT
     freqs_stft = np.linspace(0, fs // 2, n_fft // 2 + 1)
+    time_bins = np.linspace(0, total_cycles * Tperiod, mag.shape[1])
 
     if only_center:
         # Return only around the center frequency (2000 Hz)
 
-        freq_mask = (freqs_stft >= 1900) & (freqs_stft <= 2100)
+        freq_mask = (freqs_stft >= 1950) & (freqs_stft <= 2050)
         freqs_zoom = freqs_stft[freq_mask]
         mag_zoom = mag[freq_mask, :]
 
-        return mag_zoom, freqs_zoom
+        return mag_zoom, freqs_zoom, time_bins
 
-    return mag, freqs_stft
+    return mag, freqs_stft, time_bins
 
 
 def peak_heights(clear_signal, f_b, f_center, dir=False):
