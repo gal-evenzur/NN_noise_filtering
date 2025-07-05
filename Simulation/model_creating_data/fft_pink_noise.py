@@ -178,6 +178,7 @@ def my_stft(I0, B0, F_B, noise_strength,
 
             Tperiod=None,
             only_center=False,
+            is_clean=False,
             only_noise=False):
 
     dt = 1 / fs
@@ -192,12 +193,16 @@ def my_stft(I0, B0, F_B, noise_strength,
 
     end_time = Tperiod * total_cycles
 
-    _, _, Signal, _, Time, _ = Signal_Noise_FFts(I0, B0, F_B, noise_strength,
+    Voltage, _, Signal, _, Time, _ = Signal_Noise_FFts(I0, B0, F_B, noise_strength,
                                dt=dt,
                                start_time=0,
                                end_time=end_time)
 
     Signal = torch.from_numpy(Signal)
+
+    if is_clean:
+        # If only the clean signal is needed, return it without noise
+        Signal = torch.from_numpy(Voltage)
 
     N_samples_period = int(fs * Tperiod)  # Number of samples in one period
     n_fft = N_samples_period * cycles_per_window
@@ -207,6 +212,7 @@ def my_stft(I0, B0, F_B, noise_strength,
 
     stft_result = torch.stft(Signal, n_fft=n_fft, hop_length=hop_length,
                              return_complex=True,
+                             window=torch.ones(n_fft),
                              center=False)
 
     mag = stft_result.abs()
@@ -226,6 +232,21 @@ def my_stft(I0, B0, F_B, noise_strength,
 
     return mag, freqs_stft, time_bins
 
+def dummy_stft_size(fs, total_cycles, overlap, cycles_per_window, Tperiod, only_center=True):
+
+    # Dummy values
+    I0 = 50e-3  # The current amplitude in the sensor[A]
+    B0 = 4e-12  # The magnetic field on the sensor [T]
+    F_B = 15  # The magnetic field frequency [Hz]
+    noise_strength = 0.5e-10
+    dummy, _, _ = my_stft(I0, B0, F_B, noise_strength,
+           fs=fs,
+           total_cycles=total_cycles,
+           overlap=overlap,
+           cycles_per_window=cycles_per_window,
+           Tperiod=Tperiod,
+           only_center=only_center)
+    return dummy.shape
 
 def peak_heights(clear_signal, f_b, f_center, dir=False):
     # Receives a Tensor, and returns the height of each of the peaks in the signal
