@@ -47,8 +47,7 @@ def make_pink_noise(t, sigma):
 
     return pink_noise
 
-def make_noise(dt, n_power, p_perc):
-    Time = np.arange(0, 1, dt)  # Starts at t=0 and ends at t=0.999s so it is repeating itself
+def make_noise(Time, n_power, p_perc):
     n = np.size(Time)
 
     #   CREATING NOISES     #
@@ -90,14 +89,8 @@ def rand_test(I0, B0, F_B, noise_strength):
 
     return I0_r, B0_r, F_B_r, noise_strength_r, pink_percentage
 
-def Signal_Noise_FFts(I0, B0, F_B, noise_strength, pink_percentage, is_padding=False, is_window=False, only_noise=False):
-    #I0 The current amplitude in the sensor[A]
-    #B0 = The magnetic field on the sensor [T]
-    #F_B  The magnetic field frequency [Hz]
-    #noise_strength = 2.5e-5  # Noise will be 95% of times in this +-range
 
-    #    CONSTS      #
-    # Create a voltage signal from a PHE sensor
+def generate_voltage_signal(I0, B0, F_B, dt, start_time, end_time):
     rho_perp = 2.7e-7  # [ohm * m]
     AMRR = 0.02  # AMR ratio (rho_par-rho_perp)/rho_perp
     B_k = 10e-4  # [T] Difference of resistance for parallel B vs Perp B
@@ -107,10 +100,9 @@ def Signal_Noise_FFts(I0, B0, F_B, noise_strength, pink_percentage, is_padding=F
     LL = 10e-6  # The misalignment [m]
     WW = 600e-6  # The width of the sensor [m]
     F_c = 2000  # The frequency of the current in the sensor [Hz]
-    dt = 1e-4  # [sec]
 
     # Time vector
-    Time = np.arange(0, 1, dt)
+    Time = np.arange(start_time, end_time, dt)
 
     # Calculate voltage signal
     delta_rho = rho_perp * AMRR  # [ohm * m]
@@ -119,6 +111,26 @@ def Signal_Noise_FFts(I0, B0, F_B, noise_strength, pink_percentage, is_padding=F
     hh = BB / B_k
 
     Voltage = (II / thickness) * ((rho_perp + delta_rho - delta_rho * (hh ** 2)) * (LL / WW) + delta_rho * hh)
+    return Voltage, Time
+
+
+def Signal_Noise_FFts(I0, B0, F_B, noise_strength,
+                        pink_percentage=0,
+                        dt=1e-4,
+                        start_time=0,
+                        end_time=1,
+                        is_padding=False,
+                        is_window=False,
+                        only_noise=False):
+    #I0 The current amplitude in the sensor[A]
+    #B0 = The magnetic field on the sensor [T]
+    #F_B  The magnetic field frequency [Hz]
+    #noise_strength = 2.5e-5  # Noise will be 95% of times in this +-range
+
+    #    CONSTS      #
+    # Create a voltage signal from a PHE sensor
+
+    Voltage, Time = generate_voltage_signal(I0, B0, F_B, dt, start_time, end_time)
 
     # If only noise is needed, return it without FFT
     if only_noise:
@@ -138,7 +150,7 @@ def Signal_Noise_FFts(I0, B0, F_B, noise_strength, pink_percentage, is_padding=F
     f, P1 = make_fft(Voltage, 1 / dt, len(Voltage))
 
     #   CREATING NOISES     #
-    Noise, *_ = make_noise(dt, noise_strength, pink_percentage)
+    Noise, *_ = make_noise(Time, noise_strength, pink_percentage)
 
 
     #   COMBINED SIGNAL   #

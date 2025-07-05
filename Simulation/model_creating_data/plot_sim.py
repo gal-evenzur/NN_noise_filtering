@@ -16,11 +16,12 @@ from model_creating_data.fft_pink_noise import peak_heights
 # %% Plot 10 of fft signal + fft clear signal #
 with open("data.json") as json_file:
     data = json.load(json_file)
+dataSet = 'train'  # Choose 'train', 'validate', or 'test'
 
-X = data['test']['f_signals']
-Y = data['test']['f_cSignal']
+X = data[dataSet]['f_signals']
+Y = data[dataSet]['f_cSignal']
 f = data['f']
-F_Bs = data["test"]["F_B"]
+F_Bs = data[dataSet]["F_B"]
 
 unscale=True
 scale_train = {'log':True, 'norm':True, 'minmax':False}
@@ -29,7 +30,7 @@ X, Xpar = scale_tensor(X, **scale_train)
 Y, Ypar = scale_tensor(Y, **scale_test)
 
 # Choose which data set to show
-start = 5
+start = 0
 n = 10
 
 fig, sigPlot = plt.subplots(nrows=1, ncols=n,  figsize=(4*n,6))

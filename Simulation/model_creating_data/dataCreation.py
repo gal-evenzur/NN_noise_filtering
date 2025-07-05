@@ -1,9 +1,8 @@
-import numpy as np
-
 from fft_pink_noise import *
 import json
 
 add_signals = False
+testing = True
 
 #   CREATING TRAIN NOISE + SIGNAL  #
 clear_sig = []
@@ -15,7 +14,15 @@ Corresponding_Main_Peak_strength = []
 Corresponding_F_B = []
 
 
-n_trains = 64 * 16  # 1024
+if testing:
+    n_trains = 10
+    n_validate = 0
+    n_tests = 0
+else:
+    n_trains = 64 * 16  # 1024
+    n_validate = 64 * 3  # 192
+    n_tests = 64 * 3
+
 for _ in range(n_trains):
     I0 = 50e-3  # The current amplitude in the sensor[A]
     B0 = 4e-12  # The magnetic field on the sensor [T]
@@ -46,7 +53,6 @@ train = {
 }
 
 
-n_validate = 64 * 3  # 192
 for _ in range(n_validate):
     I0 = 50e-3  # The current amplitude in the sensor[A]
     B0 = 4e-12  # The magnetic field on the sensor [T]
@@ -86,7 +92,6 @@ Corresponding_B_strength = []
 Corresponding_Main_Peak_strength = []
 Corresponding_F_B = []
 
-n_tests = 64 * 3
 for _ in range(n_tests):
 
     # The base parameters:
