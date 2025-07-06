@@ -12,9 +12,14 @@ import tkinter as tk
 import json
 from NNfunctions import scale_tensor, unscale_tensor
 from model_creating_data.fft_pink_noise import peak_heights
+from matplotlib.colors import LogNorm
+
+is_stft = True
+unscale= True
 
 # %% Plot 10 of fft signal + fft clear signal #
-with open("data.json") as json_file:
+file_name = 'data.json' if not is_stft else 'data_stft.json'
+with open(file_name) as json_file:
     data = json.load(json_file)
 dataSet = 'train'  # Choose 'train', 'validate', or 'test'
 
@@ -23,7 +28,6 @@ Y = data[dataSet]['f_cSignal']
 f = data['f']
 F_Bs = data[dataSet]["F_B"]
 
-unscale=True
 scale_train = {'log':True, 'norm':True, 'minmax':False}
 scale_test = {'log':True, 'norm':False, 'minmax':False}
 X, Xpar = scale_tensor(X, **scale_train)
@@ -31,54 +35,162 @@ Y, Ypar = scale_tensor(Y, **scale_test)
 
 # Choose which data set to show
 start = 0
-n = 10
+n = 3
 
-fig, sigPlot = plt.subplots(nrows=1, ncols=n,  figsize=(4*n,6))
-fig.text(0.6, 0.01, 'f [Hz]', ha='center', fontsize=12)
-fig.text(0.01, 0.5, 'FFT', ha='center', rotation='vertical', fontsize=12)
-import matplotlib.lines as mlines
+if not is_stft:
+    # Regular FFT plotting
+    fig, sigPlot = plt.subplots(nrows=1, ncols=n, figsize=(4*n, 6))
+    fig.text(0.6, 0.01, 'f [Hz]', ha='center', fontsize=12)
+    fig.text(0.01, 0.5, 'FFT', ha='center', rotation='vertical', fontsize=12)
+    import matplotlib.lines as mlines
 
-# Create proxy artists
-data_handle = mlines.Line2D([], [], color='red', marker='.', linestyle='None', label='Data')
-pred_handle = mlines.Line2D([], [], color='blue', marker='*', linestyle='None', label='Prediction')
+    # Create proxy artists
+    data_handle = mlines.Line2D([], [], color='red', marker='.', linestyle='None', label='Data')
+    pred_handle = mlines.Line2D([], [], color='blue', marker='*', linestyle='None', label='Prediction')
+
+    for i_ in range(start, start+n):
+        Xi, Yi = X[i_], Y[i_]
+        if unscale:
+            Xi = unscale_tensor(Xi, Xpar)
+            Yi = unscale_tensor(Yi, Ypar)
+
+        F_B = F_Bs[i_]
+        highlight_x = [2000 - F_B, 2000, 2000 + F_B]
+        highlight_y = peak_heights(Yi, f_b=F_B, f_center=2000, dir=False)
+
+        i = i_%n
+
+        if scale_train['log'] and not unscale:
+            sigPlot[i].plot(f, Xi, "g*")
+            sigPlot[i].plot(f, Yi, "r.-")
+        else:
+            sigPlot[i].semilogy(f, Xi, "g*")
+            sigPlot[i].semilogy(f, Yi, "r.-")
+
+        sigPlot[i].scatter(highlight_x, highlight_y,
+                          edgecolors='black',
+                          facecolors="none",
+                          s=100,
+                          zorder=5,
+                          linewidths=2,
+                          label='Emphasized Points')
+
+        # Add a title (number) to each column's top subplot
+        sigPlot[i].set_title(f"n: {i}\n B0: {highlight_y[0]:.2e}")
+
+        sigPlot[i].grid(True)
+        # xbor = [1000, 3000]
+        # sigPlot[i].set_xlim(xbor[0],xbor[1])
+        # sigPlot[i].set_xticks([2000 - F_B, 2000 + F_B])  # 11 ticks between 1950 and 2050
+        # sigPlot[i].set_xticklabels([f"{xbor[0]:.0f}", "", "", "", f"{xbor[1]:.0f}"])
+else:
+    # STFT plotting using imshow
+    fig, sigPlot = plt.subplots(nrows=2, ncols=n, figsize=(4*n, 6))
+    fig.text(0.6, 0.01, 'Time [s]', ha='center', fontsize=12)
+    fig.text(0.01, 0.5, 'Frequency [Hz]', ha='center', rotation='vertical', fontsize=12)
+
+    # Extract time and frequency data if available
+    time_bins = data['t'][0]
+    freqs_stft = data['f'][0]
+
+    for i_ in range(start, start+n):
+        Xi, Yi = X[i_], Y[i_]
+        if unscale:
+            Xi = unscale_tensor(Xi, Xpar)
+            Yi = unscale_tensor(Yi, Ypar)
+
+        F_B = F_Bs[i_]
+        i = i_%n
+
+        # Plot STFT data using imshow
+        if unscale:
+            # Use LogNorm for scaled data
+            im = sigPlot[0][i].imshow(Xi,
+                           origin='lower',
+                           aspect='auto',
+                           cmap='viridis',
+                           interpolation='none',
+                           extent=[time_bins[0] if len(time_bins) > 1 else 0,
+                                  time_bins[-1] if len(time_bins) > 1 else len(time_bins),
+                                  freqs_stft[0] if len(freqs_stft) > 1 else 0,
+                                  freqs_stft[-1] if len(freqs_stft) > 1 else len(freqs_stft)],
+                           norm=LogNorm(vmin=max(Xi.min(), 1e-14), vmax=Xi.max()))
+
+            im = sigPlot[1][i].imshow(Yi,
+                           origin='lower',
+                           aspect='auto',
+                           cmap='viridis',
+                           interpolation='none',
+                           extent=[time_bins[0] if len(time_bins) > 1 else 0,
+                                  time_bins[-1] if len(time_bins) > 1 else len(time_bins),
+                                  freqs_stft[0] if len(freqs_stft) > 1 else 0,
+                                  freqs_stft[-1] if len(freqs_stft) > 1 else len(freqs_stft)],
+                           norm=LogNorm(vmin=max(Yi.min(), 1e-14), vmax=Yi.max()))
+        else:
+            # For log-magnitude data
+            im = sigPlot[0][i].imshow(Xi,
+                           origin='lower',
+                           aspect='auto',
+                           cmap='viridis',
+                           interpolation='none',
+                           extent=[time_bins[0] if len(time_bins) > 1 else 0,
+                                  time_bins[-1] if len(time_bins) > 1 else len(time_bins),
+                                  freqs_stft[0] if len(freqs_stft) > 1 else 0,
+                                  freqs_stft[-1] if len(freqs_stft) > 1 else len(freqs_stft)])
 
 
-for i_ in range(start,start+n):
-    Xi,Yi = X[i_],Y[i_]
-    if unscale:
-        Xi = unscale_tensor(Xi, Xpar)
-        Yi = unscale_tensor(Yi, Ypar)
+            im = sigPlot[1][i].imshow(Yi,
+                           origin='lower',
+                           aspect='auto',
+                           cmap='viridis',
+                           interpolation='none',
+                          extent=[time_bins[0] if len(time_bins) > 1 else 0,
+                                  time_bins[-1] if len(time_bins) > 1 else len(time_bins),
+                                  freqs_stft[0] if len(freqs_stft) > 1 else 0,
+                                  freqs_stft[-1] if len(freqs_stft) > 1 else len(freqs_stft)])
 
-    F_B = F_Bs[i_]
-    highlight_x = [2000 - F_B, 2000, 2000 + F_B]
-    highlight_y = peak_heights(Yi, f_b=F_B, f_center=2000, dir=False)
+        # Add colorbar to each subplot
+        cbar = plt.colorbar(im, ax=sigPlot[0][i])
+        cbar.set_label('Magnitude' if unscale else 'Log Magnitude [dB]')
+        cbary = plt.colorbar(im, ax=sigPlot[1][i])
+        cbary.set_label('Magnitude' if unscale else 'Log Magnitude [dB]')
 
-    i = i_%n
+        # Add title with F_B information
+        sigPlot[0][i].set_title(f"Noisy | n: {i}\nF_B: {F_B} Hz")
+        sigPlot[1][i].set_title(f"Clean | n: {i}\nF_B: {F_B} Hz")
 
-    if scale_train['log'] and not unscale:
-        sigPlot[i].plot(f, Xi, "g*")
-        sigPlot[i].plot(f, Yi, "r.-")
+    # Create a new figure for plotting the FFT of a single time frame
+    fig2, slicePlot = plt.subplots(nrows=1, ncols=n, figsize=(4*n, 4))
+    fig2.suptitle('FFT of a Single Time Frame', fontsize=16)
+    fig2.text(0.5, 0.01, 'Frequency [Hz]', ha='center', fontsize=12)
+    fig2.text(0.01, 0.5, 'Magnitude', ha='center', rotation='vertical', fontsize=12)
 
-    else:
-        sigPlot[i].semilogy(f, Xi, "g*")
-        sigPlot[i].semilogy(f, Yi, "r.-")
+    # Choose a time frame to plot (e.g., the middle one)
+    time_idx = len(time_bins) // 2
+    plot_time = time_bins[time_idx]
 
-    sigPlot[i].scatter(highlight_x, highlight_y,
-                       edgecolors='black',
-                       facecolors="none",
-                       s=100,
-                       zorder=5,
-                       linewidths=2,
-                       label='Emphasized Points')
+    for i_ in range(start, start+n):
+        Xi, Yi = X[i_], Y[i_]
+        if unscale:
+            Xi = unscale_tensor(Xi, Xpar)
+            Yi = unscale_tensor(Yi, Ypar)
 
-    # Add a title (number) to each column's top subplot
-    sigPlot[i].set_title(f"n: {i}\n B0: {highlight_y[0]:.2e}")
+        F_B = F_Bs[i_]
+        i = i_%n
 
-    sigPlot[i].grid(True)
-    # xbor = [1000, 3000]
-    # sigPlot[i].set_xlim(xbor[0],xbor[1])
-    # sigPlot[i].set_xticks([2000 - F_B, 2000 + F_B])  # 11 ticks between 1950 and 2050
-    # sigPlot[i].set_xticklabels([f"{xbor[0]:.0f}", "", "", "", f"{xbor[1]:.0f}"])
+        # Get the FFT for the chosen time frame
+        Xi_slice = Xi[:, time_idx]
+        Yi_slice = Yi[:, time_idx]
+
+        # Plot the FFT slices
+        slicePlot[i].plot(freqs_stft, Xi_slice, 'g.-', label='Noisy')
+        slicePlot[i].plot(freqs_stft, Yi_slice, 'r.-', label='Clean')
+        slicePlot[i].set_title(f"n: {i}, F_B: {F_B} Hz\nTime: {plot_time:.2f}s")
+        slicePlot[i].grid(True)
+        slicePlot[i].legend()
+        if unscale:
+            slicePlot[i].set_yscale('log')
+
 
 plt.tight_layout(rect=[0.03, 0.03, 1, 0.88])
 
@@ -172,4 +284,3 @@ update_plot(None)
 plt.show()
 root.mainloop()
 '''
-
