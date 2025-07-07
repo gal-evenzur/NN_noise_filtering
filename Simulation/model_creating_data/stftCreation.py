@@ -2,9 +2,10 @@ import torch
 
 from fft_pink_noise import *
 import json
+from tqdm import trange
 
 add_signals = False
-testing = True
+testing = False
 # Stft parameters
 fs = 10000
 total_cycles = 100
@@ -16,12 +17,12 @@ cycles_per_window = 5  # Number of cycles in one window
 
 if testing:
     n_trains = 10
-    n_validate = 1
-    n_tests = 1
+    n_validate = 10
+    n_tests = 10
 else:
-    n_trains = 64 * 16  # 1024
-    n_validate = 64 * 3  # 192
-    n_tests = 64 * 3
+    n_trains = 64 * 12  # 768
+    n_validate = 64 * 2  # 128
+    n_tests = 64 * 2
 
 # Finding out the size of stft #
 
@@ -38,7 +39,7 @@ Corresponding_F_B = []
 # printing the size of the clear_stft and noisy_stft tensors
 print("Size of clear_stft:", clear_stft.shape)
 
-for i in range(n_trains):
+for i in trange(n_trains, desc="Creating training data"):
     I0 = 50e-3  # The current amplitude in the sensor[A]
     B0 = 4e-12  # The magnetic field on the sensor [T]
     F_B = 15  # The magnetic field frequency [Hz]
@@ -80,13 +81,18 @@ train = {
     "F_B": Corresponding_F_B,
 }
 
+print("Training data created. sizes:")
+for key, value in train.items():
+    print(f"{key}: {np.shape(value)}")
+print("")
+
 clear_stft = torch.zeros(n_validate, stft_size[0], stft_size[1])
 noisy_stft = torch.zeros(n_validate, stft_size[0], stft_size[1])
 sig_f = []
 sig_t = []
 Corresponding_F_B = []
 
-for i in range(n_validate):
+for i in trange(n_validate, desc="Creating Validation data"):
     I0 = 50e-3  # The current amplitude in the sensor[A]
     B0 = 4e-12  # The magnetic field on the sensor [T]
     F_B = 15  # The magnetic field frequency [Hz]
@@ -113,8 +119,8 @@ for i in range(n_validate):
 
     clear_stft[i] = clean_magnitude
     noisy_stft[i] = magnitude
-    sig_f.append(freqs_stft.tolist())
-    sig_t.append(time_bins.tolist())
+    sig_f= freqs_stft.tolist()
+    sig_t= time_bins.tolist()
 
     Corresponding_F_B.append(F_B_r)
 
@@ -124,6 +130,10 @@ validate = {
     "F_B": Corresponding_F_B,
 }
 
+print("Validation data created. sizes:")
+for key, value in validate.items():
+    print(f"{key}: {np.shape(value)}")
+print("")
 
 #   CREATING TEST NOISE AND SIGNAL    #
 clear_stft = torch.zeros(n_tests, stft_size[0], stft_size[1])
@@ -132,7 +142,7 @@ sig_f = []
 sig_t = []
 Corresponding_F_B = []
 
-for i in range(n_tests):
+for i in trange(n_tests, desc="Creating Testing data"):
 
     # The base parameters:
     I0 = 50e-3  # The current amplitude in the sensor[A]
@@ -161,8 +171,8 @@ for i in range(n_tests):
 
     clear_stft[i] = clean_magnitude
     noisy_stft[i] = magnitude
-    sig_f.append(freqs_stft.tolist())
-    sig_t.append(time_bins.tolist())
+    sig_f= freqs_stft.tolist()
+    sig_t= time_bins.tolist()
 
     Corresponding_F_B.append(F_B_r)
 
@@ -171,6 +181,11 @@ test = {
     "f_signals": noisy_stft.tolist(),
     "F_B": Corresponding_F_B,
 }
+
+print("Test data created. sizes:")
+for key, value in test.items():
+    print(f"{key}: {np.shape(value)}")
+
 
 #   CREATING ONLY NOISE WITH SPECS OF TESTING #
 '''
