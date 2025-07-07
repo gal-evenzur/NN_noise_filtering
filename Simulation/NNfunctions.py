@@ -75,17 +75,17 @@ class SignalDataset(Dataset):
         clean_raw = dat[split]["f_cSignal"]
         self.clean = clean_raw
         self.F_B = dat[split]["F_B"]
+        self.f = torch.tensor(dat["f"], dtype=torch.float32)
 
         sig_raw = torch.tensor(sig_raw, dtype=torch.float32)
         clean_raw = torch.tensor(clean_raw, dtype=torch.float32)
         self.F_B = torch.tensor(self.F_B, dtype=torch.int32).unsqueeze(1)
 
-        amps = peak_heights(clean_raw, f_b=self.F_B, f_center=2000, dir=False)
+        amps = peak_heights(clean_raw, self.f, f_b=self.F_B, f_center=2000, dir=False)
 
         self.X, self.X_scale = transfrom(sig_raw, log=True, norm=True, tensor=True, resnet=resnet)
         self.Y, self.Y_scale = transfrom(amps, log=True, tensor=True)
 
-        self.f = torch.FloatTensor(dat["f"])
 
     def __len__(self):
         return len(self.X)

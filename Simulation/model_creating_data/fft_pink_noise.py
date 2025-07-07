@@ -248,37 +248,55 @@ def dummy_stft_size(fs, total_cycles, overlap, cycles_per_window, Tperiod, only_
            only_center=only_center)
     return dummy.shape
 
-def peak_heights(clear_signal, f_b, f_center, dir=False):
+
+def peak_heights(clear_signal, freqs, f_b, f_center, dir=False):
     # Receives a Tensor, and returns the height of each of the peaks in the signal
     # Needs to receive the clean signals in a dataset form (n_samps x L)
     if type(clear_signal) == np.ndarray:
         freqs = [f_center - f_b, f_center, f_center + f_b]
         return clear_signal[freqs]
 
-    n_samp = len(clear_signal)
+    n_samp = clear_signal.shape[0]
+    if not isinstance(freqs, torch.Tensor):
+        freqs = torch.from_numpy(freqs).to(clear_signal.device)
+    # Ensure f_b and f_center are tensors
+    if not isinstance(f_b, torch.Tensor):
+        f_b = torch.tensor(f_b, device=clear_signal.device)
+    if not isinstance(f_center, torch.Tensor):
+        f_center = torch.tensor(f_center, device=clear_signal.device)
 
-    l = f_center - f_b
-    m = torch.full_like(l, 2000)
-    r = f_center + f_b
 
-    # Concatenate indices: shape (n_samp, 3)
-    indices = torch.cat([l, m, r], dim=1)  # (n_samp, 3)
+    # Calculate target frequencies for each sample in the batch
+    l_freqs = (f_center - f_b)
+    # Broadcast f_center to match the batch size of f_b
+    m_freqs = f_center.expand_as(f_b)
+    r_freqs = (f_center + f_b)
 
-    # Create row indices: [0, 1, ..., n_samp-1] → shape (n_samp, 1), then expand to (n_samp, 3)
-    row_indices = torch.arange(n_samp).unsqueeze(1).expand(-1, 3)
+    target_freqs = torch.cat([l_freqs, m_freqs, r_freqs], dim=1) # (n_samp, 3)
 
-    # Use advanced indexing to extract the values
-    result = clear_signal[row_indices, indices]  # shape: (n_samp, 3)
 
-    peaks = {
-        'left': result[:, 0],
-        'center': result[:, 1],
-        'right': result[:, 2],
-    }
+
+    # Find the closest indices in the frequency axis for each target frequency
+    # The shape of indices will be (n_samp, 3)
+    indices = torch.argmin(torch.abs(freqs.unsqueeze(0) - target_freqs.unsqueeze(2)), dim=2)
+
+    # Create row indices for advanced indexing
+    row_indices = torch.arange(n_samp, device=clear_signal.device).unsqueeze(1).expand(-1, 3)
+
+    # Use advanced indexing to extract the peak values
+    if clear_signal.dim() == 3:  # STFT case: (n_samples, freq_bins, time_bins)
+        result = clear_signal[row_indices, indices, 0]
+    else:  # FFT case: (n_samples, freq_bins)
+        # For FFT, we directly index into the 2D tensor
+        result = torch.stack([clear_signal[i, indices[i]] for i in range(n_samp)])
+
 
     if dir:
+        peaks = {
+            'left': result[:, 0],
+            'center': result[:, 1],
+            'right': result[:, 2],
+        }
         return peaks
     else:
-        return result
-
-
+        return result.squeeze()

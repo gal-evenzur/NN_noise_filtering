@@ -52,6 +52,15 @@ train = {
     "F_B": Corresponding_F_B,
 }
 
+clear_sig = []
+clear_sig_f = []
+sig_time = []
+sig_f = []
+Corresponding_B_strength = []
+Corresponding_Main_Peak_strength = []
+Corresponding_F_B = []
+
+
 
 for _ in range(n_validate):
     I0 = 50e-3  # The current amplitude in the sensor[A]
@@ -129,7 +138,7 @@ clear_sig_f = []
 sig_time = []
 sig_f = []
 
-n_noise = 10
+n_noise = 0
 for _ in range(10):
 
     params = rand_test(I0, B0, F_B,noise_strength)
