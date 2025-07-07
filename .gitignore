@@ -1,5 +1,6 @@
 /Simulation/model_creating_data/data.json
-.idea
+*.idea
 **/data.json
+*.json
 **/__pycache__
 /ppt/
