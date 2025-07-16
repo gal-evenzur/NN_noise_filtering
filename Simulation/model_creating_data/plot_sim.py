@@ -4,6 +4,11 @@ import numpy as np
 from numpy.ma.extras import average
 from fft_pink_noise import make_noise
 
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+
 import matplotlib.pyplot as plt
 from scipy.signal import welch
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -15,7 +20,7 @@ from model_creating_data.fft_pink_noise import peak_heights
 from matplotlib.colors import LogNorm
 
 is_stft = True
-unscale= True
+unscale= False
 
 # %% Plot 10 of fft signal + fft clear signal #
 file_name = 'data.json' if not is_stft else 'data_stft.json'
@@ -34,7 +39,7 @@ X, Xpar = scale_tensor(X, **scale_train)
 Y, Ypar = scale_tensor(Y, **scale_test)
 
 # Choose which data set to show
-start = 0
+start = 5
 n = 3
 
 if not is_stft:
@@ -90,8 +95,8 @@ else:
     fig.text(0.01, 0.5, 'Frequency [Hz]', ha='center', rotation='vertical', fontsize=12)
 
     # Extract time and frequency data if available
-    time_bins = data['t'][0]
-    freqs_stft = data['f'][0]
+    time_bins = data['t']
+    freqs_stft = data['f']
 
     for i_ in range(start, start+n):
         Xi, Yi = X[i_], Y[i_]
@@ -188,8 +193,8 @@ else:
         slicePlot[i].set_title(f"n: {i}, F_B: {F_B} Hz\nTime: {plot_time:.2f}s")
         slicePlot[i].grid(True)
         slicePlot[i].legend()
-        if unscale:
-            slicePlot[i].set_yscale('log')
+        # if unscale:
+        #     slicePlot[i].set_yscale('log')
 
 
 plt.tight_layout(rect=[0.03, 0.03, 1, 0.88])

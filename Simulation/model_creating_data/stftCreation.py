@@ -5,7 +5,7 @@ import json
 from tqdm import trange
 
 add_signals = False
-testing = False
+testing = True
 # Stft parameters
 fs = 10000
 total_cycles = 100
