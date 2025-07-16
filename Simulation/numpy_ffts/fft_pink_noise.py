@@ -248,13 +248,14 @@ def dummy_stft_size(fs, total_cycles, overlap, cycles_per_window, Tperiod, only_
            only_center=only_center)
     return dummy.shape
 
+def peak_heights_numpy(clear_signal, f_b, f_center, dir=False):
+    freqs = [f_center - f_b, f_center, f_center + f_b]
+    return clear_signal[freqs]
+
 
 def peak_heights(clear_signal, freqs, f_b, f_center, dir=False):
     # Receives a Tensor, and returns the height of each of the peaks in the signal
     # Needs to receive the clean signals in a dataset form (n_samps x L)
-    if type(clear_signal) == np.ndarray:
-        freqs = [f_center - f_b, f_center, f_center + f_b]
-        return clear_signal[freqs]
 
     n_samp = clear_signal.shape[0]
     if not isinstance(freqs, torch.Tensor):

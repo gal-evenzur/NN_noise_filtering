@@ -28,7 +28,7 @@ hyperVar = {
     # Training parameters
     'optimizer': Adam,
     'lr': 1e-5,
-    'n_epochs': 100,
+    'n_epochs': 5,
     'patience': 5,
 
     # Plotting parameters

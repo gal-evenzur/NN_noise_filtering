@@ -1,29 +1,22 @@
 # %% Imports
-import random
-import numpy as np
-from numpy.ma.extras import average
-from fft_pink_noise import make_noise
-
 import sys
-import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+research_path = r"C:\Users\galev\Documents\Uni\Y3S2\Research"  # or use a dynamic path
+if research_path not in sys.path:
+    sys.path.append(research_path)
 
 
 import matplotlib.pyplot as plt
-from scipy.signal import welch
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import tkinter as tk
 # import colorednoise
 import json
 from NNfunctions import scale_tensor, unscale_tensor
-from model_creating_data.fft_pink_noise import peak_heights
+from Simulation.numpy_ffts.fft_pink_noise import peak_heights_numpy
 from matplotlib.colors import LogNorm
 
-is_stft = True
-unscale= False
+is_stft = False
+unscale= True
 
 # %% Plot 10 of fft signal + fft clear signal #
-file_name = 'data.json' if not is_stft else 'data_stft.json'
+file_name = 'Data/data.json' if not is_stft else 'data_stft.json'
 with open(file_name) as json_file:
     data = json.load(json_file)
 dataSet = 'train'  # Choose 'train', 'validate', or 'test'
@@ -61,7 +54,7 @@ if not is_stft:
 
         F_B = F_Bs[i_]
         highlight_x = [2000 - F_B, 2000, 2000 + F_B]
-        highlight_y = peak_heights(Yi, f_b=F_B, f_center=2000, dir=False)
+        highlight_y = peak_heights_numpy(Yi, f_b=F_B, f_center=2000, dir=False)
 
         i = i_%n
 

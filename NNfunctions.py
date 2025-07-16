@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 from ignite.metrics import Metric
 import json
 import numpy as np
-from model_creating_data.fft_pink_noise import peak_heights
+from Simulation.numpy_ffts.fft_pink_noise import peak_heights
 
 def scale_tensor(dat_raw, log=False, norm=False, minmax=False, tensor=False, resnet=False):
     sc_par = {}
