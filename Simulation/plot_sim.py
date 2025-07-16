@@ -14,6 +14,7 @@ from matplotlib.colors import LogNorm
 
 is_stft = False
 unscale= True
+real_b = False  # Use real B values for highlighting
 
 # %% Plot 10 of fft signal + fft clear signal #
 file_name = 'Data/data.json' if not is_stft else 'data_stft.json'
@@ -25,11 +26,14 @@ X = data[dataSet]['f_signals']
 Y = data[dataSet]['f_cSignal']
 f = data['f']
 F_Bs = data[dataSet]["F_B"]
+B0s = data[dataSet]["B_strength"]
 
 scale_train = {'log':True, 'norm':True, 'minmax':False}
 scale_test = {'log':True, 'norm':False, 'minmax':False}
 X, Xpar = scale_tensor(X, **scale_train)
 Y, Ypar = scale_tensor(Y, **scale_test)
+
+print("Successfully loaded data from", file_name)
 
 # Choose which data set to show
 start = 5
@@ -55,6 +59,8 @@ if not is_stft:
         F_B = F_Bs[i_]
         highlight_x = [2000 - F_B, 2000, 2000 + F_B]
         highlight_y = peak_heights_numpy(Yi, f_b=F_B, f_center=2000, dir=False)
+        if real_b:
+            highlight_y = [B0s[i_], highlight_y[1], B0s[i_]]
 
         i = i_%n
 

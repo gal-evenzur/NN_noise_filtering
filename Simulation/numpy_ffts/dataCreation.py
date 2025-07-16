@@ -13,6 +13,7 @@ sig_f = []
 Corresponding_B_strength = []
 Corresponding_Main_Peak_strength = []
 Corresponding_F_B = []
+Corresponding_B_strength = []
 
 
 if testing:
@@ -35,6 +36,7 @@ for _ in tqdm(range(n_trains), desc="Generating training data"):
     Volt, fVolt, Signal, fSignal, Time, freq = Signal_Noise_FFts(*params)
 
     real_F_B = params[2]
+    real_B = params[1]
 
     if add_signals:
         clear_sig.append(Volt.tolist())
@@ -42,6 +44,7 @@ for _ in tqdm(range(n_trains), desc="Generating training data"):
     clear_sig_f.append(fVolt.tolist())
     sig_f.append(fSignal.tolist())
     Corresponding_F_B.append(real_F_B)
+    Corresponding_B_strength.append(real_B)
 
     # Corresponding_B_strength.append(fVolt[2000-real_F_B])
     # Corresponding_Main_Peak_strength.append(np.max(fVolt))
@@ -52,6 +55,7 @@ train = {
     "signals": sig_time,
     "f_signals": sig_f,
     "F_B": Corresponding_F_B,
+    "B_strength": Corresponding_B_strength,
 }
 print(f"Finished generating training dataset with {len(train['f_cSignal'])} samples")
 for key, val in train.items():
@@ -65,6 +69,7 @@ sig_f = []
 Corresponding_B_strength = []
 Corresponding_Main_Peak_strength = []
 Corresponding_F_B = []
+Corresponding_B_strength = []
 
 
 
@@ -78,6 +83,7 @@ for _ in tqdm(range(n_validate), desc="Generating validation data"):
     Volt, fVolt, Signal, fSignal, Time, freq = Signal_Noise_FFts(*params)
 
     real_F_B = params[2]
+    real_B = params[1]
 
     if add_signals:
         clear_sig.append(Volt.tolist())
@@ -85,6 +91,7 @@ for _ in tqdm(range(n_validate), desc="Generating validation data"):
     clear_sig_f.append(fVolt.tolist())
     sig_f.append(fSignal.tolist())
     Corresponding_F_B.append(real_F_B)
+    Corresponding_B_strength.append(real_B)
 
     # Corresponding_B_strength.append(fVolt[2000-real_F_B])
     # Corresponding_Main_Peak_strength.append(np.max(fVolt))
@@ -95,6 +102,7 @@ validate = {
     "signals": sig_time,
     "f_signals": sig_f,
     "F_B": Corresponding_F_B,
+    "B_strength": Corresponding_B_strength,
 }
 print(f"Finished generating validation dataset with {len(validate['f_cSignal'])} samples")
 for key, val in validate.items():
@@ -110,6 +118,7 @@ sig_f = []
 Corresponding_B_strength = []
 Corresponding_Main_Peak_strength = []
 Corresponding_F_B = []
+Corresponding_B_strength = []
 
 for _ in tqdm(range(n_tests), desc="Generating test data"):
 
@@ -123,6 +132,7 @@ for _ in tqdm(range(n_tests), desc="Generating test data"):
     Volt, fVolt, Signal, fSignal, Time, freq = Signal_Noise_FFts(*params)
 
     real_F_B = params[2]
+    real_B = params[1]
 
     if add_signals:
         clear_sig.append(Volt.tolist())
@@ -130,6 +140,7 @@ for _ in tqdm(range(n_tests), desc="Generating test data"):
     clear_sig_f.append(fVolt.tolist())
     sig_f.append(fSignal.tolist())
     Corresponding_F_B.append(real_F_B)
+    Corresponding_B_strength.append(real_B)
 
     # Corresponding_B_strength.append(fVolt[2000-real_F_B])
     # Corresponding_Main_Peak_strength.append(np.max(fVolt))
@@ -140,7 +151,9 @@ test = {
     "signals": sig_time,
     "f_signals": sig_f,
     "F_B": Corresponding_F_B,
+    "B_strength": Corresponding_B_strength,
 }
+
 print(f"Finished generating test dataset with {len(test['f_cSignal'])} samples")
 for key, val in test.items():
     print(f"Test {key} samples: {len(val)}")
