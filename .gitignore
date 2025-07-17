@@ -2,5 +2,6 @@
 *.idea
 **/data.json
 *.json
+*.h5
 **/__pycache__
 /ppt/
