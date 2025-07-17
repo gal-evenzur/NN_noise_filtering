@@ -1,5 +1,6 @@
 # %% IMPORTS #
 from NNfunctions import *
+import time
 
 import torch
 import torch.nn as nn
@@ -31,7 +32,7 @@ hyperVar = {
     # Training parameters
     'optimizer': Adam,
     'lr': 1e-6,
-    'n_epochs': 100,
+    'n_epochs': 5,
     'patience': 4,
     'validate_every': 10,  # Run validation every n iterations
 
@@ -43,14 +44,19 @@ hyperVar = {
 
 
 # %% First, IMPORTING DATA #
+start_time = time.time()
 
-trainSet = SignalDataset('model_creating_data/data_stft.json', split="train", resnet=True)
-validateSet = SignalDataset('model_creating_data/data_stft.json', split="validate", resnet=True)
-testSet = SignalDataset('model_creating_data/data_stft.json', split="test", resnet=True)
+trainSet = SignalDataset('Data/data_stft.h5', split="train", resnet=True)
+validateSet = SignalDataset('Data/data_stft.h5', split="validate", resnet=True)
+testSet = SignalDataset('Data/data_stft.h5', split="test", resnet=True)
 
 dataloader = DataLoader(trainSet, batch_size=hyperVar["batch_size"], shuffle=True)
 validate_loader = DataLoader(validateSet, batch_size=hyperVar["batch_size"], shuffle=False)
 test_loader = DataLoader(testSet, batch_size=hyperVar["batch_size"], shuffle=False)
+
+load_time = time.time() - start_time
+print(f"Data loaded in {load_time:.2f} seconds")
+print(f"Dataset sizes: Train={len(trainSet)}, Validation={len(validateSet)}, Test={len(testSet)}")
 
 
 # %% Structure for the NN: #
@@ -110,7 +116,8 @@ class ResNet2D(nn.Module):
         """
         return self.resnet(x)
 
-model = ResNet2D(n_classes=3, pretrained=True, freeze_pretrained=True)
+model = ResNet2D(n_classes=3, pretrained=True, freeze_pretrained=False)
+model = model.double()  # Convert model to float64
 
 # %% Defining training engine and Events
 

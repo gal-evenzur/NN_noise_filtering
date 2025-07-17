@@ -44,9 +44,9 @@ hyperVar = {
 
 # %% First, IMPORTING DATA #
 
-trainSet = SignalDataset('model_creating_data/data.json', split="train", resnet=True)
-validateSet = SignalDataset('model_creating_data/data.json', split="validate", resnet=True)
-testSet = SignalDataset('model_creating_data/data.json', split="test", resnet=True)
+trainSet = SignalDataset('Data/data.h5', split="train", resnet=True)
+validateSet = SignalDataset('Data/data.h5', split="validate", resnet=True)
+testSet = SignalDataset('Data/data.h5', split="test", resnet=True)
 
 dataloader = DataLoader(trainSet, batch_size=hyperVar["batch_size"], shuffle=True)
 validate_loader = DataLoader(validateSet, batch_size=hyperVar["batch_size"], shuffle=False)
