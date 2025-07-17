@@ -12,12 +12,14 @@ from NNfunctions import scale_tensor, unscale_tensor
 from Simulation.numpy_ffts.fft_pink_noise import peak_heights_numpy
 from matplotlib.colors import LogNorm
 
-is_stft = False
-unscale= True
+import numpy as np
+
+is_stft = True
+unscale= False
 real_b = False  # Use real B values for highlighting
 
 # %% Plot 10 of fft signal + fft clear signal #
-file_name = 'Data/data.json' if not is_stft else 'data_stft.json'
+file_name = 'Data/data.json' if not is_stft else 'Data/data_stft.json'
 with open(file_name) as json_file:
     data = json.load(json_file)
 dataSet = 'train'  # Choose 'train', 'validate', or 'test'
@@ -26,7 +28,6 @@ X = data[dataSet]['f_signals']
 Y = data[dataSet]['f_cSignal']
 f = data['f']
 F_Bs = data[dataSet]["F_B"]
-B0s = data[dataSet]["B_strength"]
 
 scale_train = {'log':True, 'norm':True, 'minmax':False}
 scale_test = {'log':True, 'norm':False, 'minmax':False}
@@ -40,6 +41,8 @@ start = 5
 n = 3
 
 if not is_stft:
+    B0s = data[dataSet]["B_strength"]
+
     # Regular FFT plotting
     fig, sigPlot = plt.subplots(nrows=1, ncols=n, figsize=(4*n, 6))
     fig.text(0.6, 0.01, 'f [Hz]', ha='center', fontsize=12)
@@ -96,6 +99,11 @@ else:
     # Extract time and frequency data if available
     time_bins = data['t']
     freqs_stft = data['f']
+
+    # Print time_bins and freqs's shapes for debugging
+    print("Time bins shape:", np.shape(time_bins))
+    print("Frequency bins shape:", np.shape(freqs_stft))
+
 
     for i_ in range(start, start+n):
         Xi, Yi = X[i_], Y[i_]
@@ -170,11 +178,11 @@ else:
     fig2.text(0.01, 0.5, 'Magnitude', ha='center', rotation='vertical', fontsize=12)
 
     # Choose a time frame to plot (e.g., the middle one)
-    time_idx = len(time_bins) // 2
+    time_idx = 2
     plot_time = time_bins[time_idx]
 
     for i_ in range(start, start+n):
-        Xi, Yi = X[i_], Y[i_]
+        Xi, Yi = X[i_].squeeze(), Y[i_].squeeze()
         if unscale:
             Xi = unscale_tensor(Xi, Xpar)
             Yi = unscale_tensor(Yi, Ypar)
@@ -192,8 +200,8 @@ else:
         slicePlot[i].set_title(f"n: {i}, F_B: {F_B} Hz\nTime: {plot_time:.2f}s")
         slicePlot[i].grid(True)
         slicePlot[i].legend()
-        # if unscale:
-        #     slicePlot[i].set_yscale('log')
+        if unscale:
+            slicePlot[i].set_yscale('log')
 
 
 plt.tight_layout(rect=[0.03, 0.03, 1, 0.88])

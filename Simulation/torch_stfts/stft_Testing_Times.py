@@ -1,4 +1,4 @@
-from fft_pink_noise import *
+from torch_stft_pink_noise import *
 import json
 from math import gcd
 from functools import reduce
@@ -10,8 +10,8 @@ import numpy as np  # Add this if not already imported
 # Parameters for the voltage signal
 I0 = 50e-3  # The current amplitude in the sensor[A]
 B0 = 1e-12  # The magnetic field on the sensor [T]
-F_B = 11  # The magnetic field frequency [Hz]
-noise_strength = 0.5e-10
+F_B = 15  # The magnetic field frequency [Hz]
+noise_strength = 0.5e-12
 
 # Sampling and time parameters
 
@@ -39,12 +39,14 @@ end_time = Tperiod * total_cycles
 result = Signal_Noise_FFts(I0, B0, F_B, noise_strength,
                           dt=dt,
                           start_time=0,
+                          device='cpu',
                           end_time=end_time)
 
-fSignal = result[3]
-frequencies = result[5]
-signal = torch.from_numpy(result[2])
-Time = result[4]
+fSignal = result[1].numpy()
+frequencies = result[5].numpy()
+signal = result[2].numpy()
+Time = result[4].numpy()
+
 
 # Use my_stft function instead of manual STFT calculation
 magnitude, freqs_stft, time_bins = my_stft(I0, B0, F_B, noise_strength,
@@ -53,6 +55,7 @@ magnitude, freqs_stft, time_bins = my_stft(I0, B0, F_B, noise_strength,
                               overlap=overlap_perc,
                               cycles_per_window=cycles_per_window,
                               Tperiod=Tperiod,
+                              device='cpu',
                               only_center=True)
 
 
@@ -77,7 +80,7 @@ plt.tight_layout()
 fig, axs = plt.subplots(1, 2, figsize=(15, 5))
 
 # Plot 1: Full FFT
-axs[0].plot(frequencies, np.abs(fSignal))
+axs[0].plot(frequencies, fSignal)
 axs[0].set_yscale('log')
 axs[0].set_xlabel('Frequency [Hz]')
 axs[0].set_ylabel('Magnitude')
