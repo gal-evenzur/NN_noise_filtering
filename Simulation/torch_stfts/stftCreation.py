@@ -2,12 +2,12 @@ import torch
 import time  # Add time module for performance measurement
 
 from torch_stft_pink_noise import *
-import json
+import h5py
 import numpy as np
 from tqdm import trange
 
 add_signals = False
-testing = True
+testing = False
 # Stft parameters
 fs = 10000
 total_cycles = 100
@@ -25,9 +25,9 @@ if testing:
     n_validate = 10
     n_tests = 10
 else:
-    n_trains = 64 * 12  # 768
-    n_validate = 64 * 2  # 128
-    n_tests = 64 * 2
+    n_trains = 64 * 20  # 1280
+    n_validate = 64 * 1  # 64
+    n_tests = 64 * 1
 
 # Finding out the size of stft #
 
@@ -117,18 +117,18 @@ for batch_idx in trange(0, n_trains, batch_size, desc="Creating training data ba
     Corresponding_F_B.extend(F_B_r.tolist())
 
 
-train = {
-    "f_cSignal": clear_stft.cpu().tolist(),
-    "f_signals": noisy_stft.cpu().tolist(),
-    "F_B": Corresponding_F_B,  # Already a list of integers, no need for conversion
-}
+# Store data directly as numpy arrays for better efficiency
+train_f_cSignal = clear_stft.cpu().numpy()  # Direct numpy conversion
+train_f_signals = noisy_stft.cpu().numpy()
+train_F_B = np.array(Corresponding_F_B)
 
 data_creation_times['train'] = time.time() - train_start_time
 
 print("Training data created. sizes:")
-for key, value in train.items():
-    print(f"{key}: {np.shape(value)}")
-    
+print(f"f_cSignal: {train_f_cSignal.shape}")
+print(f"f_signals: {train_f_signals.shape}")
+print(f"F_B: {train_F_B.shape}")
+
 # Print time statistics for training data
 print("\nTraining data creation time statistics:")
 print(f"Total time: {data_creation_times['train']:.2f} seconds")
@@ -195,17 +195,17 @@ for batch_idx in trange(0, n_validate, batch_size, desc="Creating validation dat
     noisy_stft[batch_idx:batch_idx+current_batch_size] = magnitude
     Corresponding_F_B.extend(F_B_r.tolist())
 
-validate = {
-    "f_cSignal": clear_stft.cpu().tolist(),
-    "f_signals": noisy_stft.cpu().tolist(),
-    "F_B": Corresponding_F_B,  # Already a list of integers, no need for conversion
-}
+# Store data directly as numpy arrays for better efficiency
+validate_f_cSignal = clear_stft.cpu().numpy()
+validate_f_signals = noisy_stft.cpu().numpy()
+validate_F_B = np.array(Corresponding_F_B)
 
 data_creation_times['validate'] = time.time() - validate_start_time
 
 print("Validation data created. sizes:")
-for key, value in validate.items():
-    print(f"{key}: {np.shape(value)}")
+print(f"f_cSignal: {validate_f_cSignal.shape}")
+print(f"f_signals: {validate_f_signals.shape}")
+print(f"F_B: {validate_F_B.shape}")
 print("")
 
 #   CREATING TEST NOISE AND SIGNAL    #
@@ -271,17 +271,17 @@ for batch_idx in trange(0, n_tests, batch_size, desc="Creating testing data batc
     Corresponding_F_B.extend(F_B_r.tolist())
 
 
-test = {
-    "f_cSignal": clear_stft.cpu().tolist(),
-    "f_signals": noisy_stft.cpu().tolist(),
-    "F_B": Corresponding_F_B,  # Already a list of integers, no need for conversion
-}
+# Store data directly as numpy arrays for better efficiency
+test_f_cSignal = clear_stft.cpu().numpy()
+test_f_signals = noisy_stft.cpu().numpy()
+test_F_B = np.array(Corresponding_F_B)
 
 data_creation_times['test'] = time.time() - test_start_time
 
 print("Test data created. sizes:")
-for key, value in test.items():
-    print(f"{key}: {np.shape(value)}")
+print(f"f_cSignal: {test_f_cSignal.shape}")
+print(f"f_signals: {test_f_signals.shape}")
+print(f"F_B: {test_F_B.shape}")
 
 
 #   CREATING ONLY NOISE WITH SPECS OF TESTING #
@@ -309,18 +309,72 @@ noise_for_test = {
 }
 '''
 
-data = {
-    "train": train,
-    "validate": validate,
-    "test": test,
-    "t": sig_t.cpu().tolist(),
-    "f": sig_f.cpu().tolist()
-}
-
-
-#Writting to the data:
-with open("Data/data_stft.json", "w") as f:
-    json.dump(data, f, indent=4)
+# Writing the data to HDF5 file with chunking:
+with h5py.File("Data/data_stft.h5", "w") as f:
+    # Determine optimal chunk sizes based on data dimensions and typical access patterns
+    # For STFT data: chunk by whole samples to maintain data locality
+    # Typical chunk size: 8-32 samples at a time for efficient I/O
+    
+    # Training data chunking
+    train_samples = train_f_cSignal.shape[0]
+    train_chunk_size = min(16, train_samples)  # Chunk 16 samples or all if fewer
+    train_stft_chunks = (train_chunk_size, train_f_cSignal.shape[1], train_f_cSignal.shape[2])
+    train_fb_chunks = (min(64, train_samples),)  # For 1D F_B array
+    
+    train_group = f.create_group("train")
+    train_group.create_dataset("f_cSignal", data=train_f_cSignal, 
+                              chunks=train_stft_chunks,
+                              compression=None)  # No compression as requested
+    train_group.create_dataset("f_signals", data=train_f_signals, 
+                              chunks=train_stft_chunks,
+                              compression=None)
+    train_group.create_dataset("F_B", data=train_F_B, 
+                              chunks=train_fb_chunks,
+                              compression=None)
+    
+    # Validation data chunking
+    validate_samples = validate_f_cSignal.shape[0]
+    validate_chunk_size = min(16, validate_samples)
+    validate_stft_chunks = (validate_chunk_size, validate_f_cSignal.shape[1], validate_f_cSignal.shape[2])
+    validate_fb_chunks = (min(64, validate_samples),)
+    
+    validate_group = f.create_group("validate")
+    validate_group.create_dataset("f_cSignal", data=validate_f_cSignal, 
+                                 chunks=validate_stft_chunks,
+                                 compression=None)
+    validate_group.create_dataset("f_signals", data=validate_f_signals, 
+                                 chunks=validate_stft_chunks,
+                                 compression=None)
+    validate_group.create_dataset("F_B", data=validate_F_B, 
+                                 chunks=validate_fb_chunks,
+                                 compression=None)
+    
+    # Test data chunking
+    test_samples = test_f_cSignal.shape[0]
+    test_chunk_size = min(16, test_samples)
+    test_stft_chunks = (test_chunk_size, test_f_cSignal.shape[1], test_f_cSignal.shape[2])
+    test_fb_chunks = (min(64, test_samples),)
+    
+    test_group = f.create_group("test")
+    test_group.create_dataset("f_cSignal", data=test_f_cSignal, 
+                             chunks=test_stft_chunks,
+                             compression=None)
+    test_group.create_dataset("f_signals", data=test_f_signals, 
+                             chunks=test_stft_chunks,
+                             compression=None)
+    test_group.create_dataset("F_B", data=test_F_B, 
+                             chunks=test_fb_chunks,
+                             compression=None)
+    
+    # Time and frequency axes (no chunking needed for small 1D arrays)
+    f.create_dataset("t", data=sig_t.cpu().numpy(), compression=None)
+    f.create_dataset("f", data=sig_f.cpu().numpy(), compression=None)
+    
+    print(f"\nHDF5 file created with chunking:")
+    print(f"Training STFT chunks: {train_stft_chunks}")
+    print(f"Validation STFT chunks: {validate_stft_chunks}")
+    print(f"Test STFT chunks: {test_stft_chunks}")
+    print(f"F_B chunks: {train_fb_chunks[0]} samples")
 
 total_execution_time = time.time() - total_start_time
 print("\nOverall Performance Statistics:")

@@ -6,8 +6,10 @@ if research_path not in sys.path:
 
 
 import matplotlib.pyplot as plt
+import matplotlib.lines as mlines
 # import colorednoise
 import json
+import h5py
 from NNfunctions import scale_tensor, unscale_tensor
 from Simulation.numpy_ffts.fft_pink_noise import peak_heights_numpy
 from matplotlib.colors import LogNorm
@@ -19,26 +21,41 @@ unscale= True
 real_b = False  # Use real B values for highlighting
 
 # %% Plot 10 of fft signal + fft clear signal #
-file_name = 'Data/data.json' if not is_stft else 'Data/data_stft.json'
-with open(file_name) as json_file:
-    data = json.load(json_file)
 dataSet = 'train'  # Choose 'train', 'validate', or 'test'
 
-X = data[dataSet]['f_signals']
-Y = data[dataSet]['f_cSignal']
-f = data['f']
-F_Bs = data[dataSet]["F_B"]
+# Choose which data set to show
+start = 5
+n = 3
+
+if is_stft:
+    # Load only n samples from HDF5 data for STFT
+    file_name = 'Data/data_stft.h5'
+    with h5py.File(file_name, 'r') as h5_file:
+        X = h5_file[f'{dataSet}/f_signals'][start:start+n]
+        Y = h5_file[f'{dataSet}/f_cSignal'][start:start+n]
+        freqs_stft = h5_file['f'][()]
+        time_bins = h5_file['t'][()]
+        F_Bs = h5_file[f'{dataSet}/F_B'][start:start+n]
+
+    print("\nSuccessfully loaded HDF5 STFT data from", file_name)
+else:
+    # Load JSON data for regular FFT
+    file_name = 'Data/data.json'
+    with open(file_name) as json_file:
+        data = json.load(json_file)
+    
+    X = data[dataSet]['f_signals']
+    Y = data[dataSet]['f_cSignal']
+    f = data['f']
+    F_Bs = data[dataSet]["F_B"]
+    print("\nSuccessfully loaded JSON FFT data from", file_name)
 
 scale_train = {'log':True, 'norm':True, 'minmax':False}
 scale_test = {'log':True, 'norm':False, 'minmax':False}
 X, Xpar = scale_tensor(X, **scale_train)
 Y, Ypar = scale_tensor(Y, **scale_test)
 
-print("\nSuccessfully loaded data from", file_name)
 
-# Choose which data set to show
-start = 5
-n = 3
 
 if not is_stft:
     B0s = data[dataSet]["B_strength"]
@@ -96,16 +113,13 @@ else:
     fig.text(0.6, 0.01, 'Time [s]', ha='center', fontsize=12)
     fig.text(0.01, 0.5, 'Frequency [Hz]', ha='center', rotation='vertical', fontsize=12)
 
-    # Extract time and frequency data if available
-    time_bins = data['t']
-    freqs_stft = data['f']
 
     # Print time_bins and freqs's shapes for debugging
     print("Time bins shape:", np.shape(time_bins))
     print("Frequency bins shape:", np.shape(freqs_stft))
 
 
-    for i_ in range(start, start+n):
+    for i_ in range(0, n):
         Xi, Yi = X[i_], Y[i_]
         if unscale:
             Xi = unscale_tensor(Xi, Xpar)
@@ -181,7 +195,7 @@ else:
     time_idx = 2
     plot_time = time_bins[time_idx]
 
-    for i_ in range(start, start+n):
+    for i_ in range(0, n):
         Xi, Yi = X[i_].squeeze(), Y[i_].squeeze()
         if unscale:
             Xi = unscale_tensor(Xi, Xpar)
@@ -207,92 +221,3 @@ else:
 plt.tight_layout(rect=[0.03, 0.03, 1, 0.88])
 
 plt.show()
-'''
-# %%  PLOTTING NOISE   #
-
-dt = 1e-4  # 10 kHz sample rate
-fs = 1 / dt
-n_power = 2.5e-5
-pink_percentage = 0.5  # 50% pink, 50% white for the mix
-
-# Generate noises
-combined_noise, pink_noise, white_noise = make_noise(dt, n_power, pink_percentage)
-
-# Welch Power Spectral Density
-f_w, Pxx_w = welch(white_noise, fs, nperseg=1024)
-f_p, Pxx_p = welch(pink_noise, fs, nperseg=1024)
-f_c, Pxx_c = welch(combined_noise, fs, nperseg=1024)
-
-# Plotting (with log-log for max nerd power)
-fig, Noise = plt.subplots(nrows=3, figsize=(10, 6))
-
-Noise[0].loglog(f_w, Pxx_w, label='White Noise')
-Noise[1].loglog(f_p, Pxx_p, label='Pink Noise')
-Noise[2].loglog(f_c, Pxx_c, label='Combined Noise (50/50)')
-plt.xlabel('Frequency [Hz]')
-plt.ylabel('Power Spectral Density [V²/Hz]')
-plt.title('Welch Power Spectra: White vs Pink vs Combined')
-plt.legend()
-plt.grid(True, which="both", ls="--", lw=0.5)
-plt.tight_layout()
-
-#   Add reference lines for noises  #
-
-ref_p = Pxx_p[50] * (f_p[50] / f_p[1:])  # reference line ~1/f
-Noise[1].loglog(f_p[1:], ref_p, 'k--', label='~1/f')
-
-
-# %% Noise with slider
-
-def plot_spectrum(ax, noise, fs):
-    ax.clear()
-    f, Pxx = welch(noise, fs, nperseg=1024)
-    ax.loglog(f, Pxx, label="Combined Noise")
-
-    # Flat line (white noise reference)
-    flat_val = np.mean(Pxx)
-    ax.loglog(f, [flat_val] * len(f), 'k--', label="Flat Fit (White)")
-
-    # 1/f line (pink noise reference)
-    f_nonzero = f[f > 0]
-    A = Pxx[1] * f_nonzero[0]
-    pink_line = A / f_nonzero
-    ax.loglog(f_nonzero, pink_line, 'r--', label="1/f Fit (Pink)")
-
-    ax.set_title("Power Spectrum (Welch)")
-    ax.set_xlabel("Frequency [Hz]")
-    ax.set_ylabel("Power Spectral Density")
-    ax.grid(True, which='both', ls='--')
-    ax.legend()
-
-# ------------- GUI App -------------
-
-def update_plot(_):
-    pink_perc = pink_slider.get() / 100
-    power_val = 10 ** (power_slider.get())  # Exponential scale
-    noise, _, _ = make_noise(dt=1e-4, n_power=power_val, p_perc=pink_perc)
-    plot_spectrum(ax, noise, fs=1/1e-4)
-    canvas.draw()
-
-
-root = tk.Tk()
-root.title("Noise Mixer (White vs Pink)")
-
-fig, ax = plt.subplots(figsize=(7, 5))
-canvas = FigureCanvasTkAgg(fig, master=root)
-canvas.get_tk_widget().pack()
-
-
-pink_slider = tk.Scale(root, from_=0, to=100, orient='horizontal', label="Pink Noise %", command=update_plot)
-pink_slider.set(50)
-pink_slider.pack()
-
-power_slider = tk.Scale(root, from_=-6, to=-0, resolution=0.1, orient='horizontal', label="Log10 Noise Power", command=update_plot)
-power_slider.set(-4.6)  # ~2.5e-5
-power_slider.pack()
-
-update_plot(None)
-
-plt.show()
-root.mainloop()
-'''
