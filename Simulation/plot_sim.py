@@ -15,7 +15,7 @@ from matplotlib.colors import LogNorm
 import numpy as np
 
 is_stft = True
-unscale= False
+unscale= True
 real_b = False  # Use real B values for highlighting
 
 # %% Plot 10 of fft signal + fft clear signal #
@@ -34,7 +34,7 @@ scale_test = {'log':True, 'norm':False, 'minmax':False}
 X, Xpar = scale_tensor(X, **scale_train)
 Y, Ypar = scale_tensor(Y, **scale_test)
 
-print("Successfully loaded data from", file_name)
+print("\nSuccessfully loaded data from", file_name)
 
 # Choose which data set to show
 start = 5
