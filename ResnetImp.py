@@ -1,5 +1,6 @@
 # %% IMPORTS #
 from NNfunctions import *
+from resnet1d_master.resnet1d import ResNet1D
 
 import torch
 import torch.nn as nn
@@ -12,6 +13,8 @@ from ignite.contrib.handlers import ProgressBar
 from ignite.metrics import Loss
 
 import matplotlib
+
+
 matplotlib.use('TkAgg')  # or 'Agg' for testing headless
 import matplotlib.pyplot as plt
 import numpy as np
@@ -27,9 +30,10 @@ hyperVar = {
 
     # Training parameters
     'optimizer': Adam,
-    'lr': 1e-5,
-    'n_epochs': 100,
-    'patience': 5,
+    'lr': 1e-3,
+    'n_epochs': 10,
+    'patience': 2,
+    'validate_every': 10,  # Run validation every n iterations
 
     # Plotting parameters
     'n_plotted': 10,
@@ -37,11 +41,12 @@ hyperVar = {
     'unscaled_plot': True,
             }
 
+
 # %% First, IMPORTING DATA #
 
-trainSet = SignalDataset('model_creating_data/data.json', split="train")
-validateSet = SignalDataset('model_creating_data/data.json', split="validate")
-testSet = SignalDataset('model_creating_data/data.json', split="test")
+trainSet = SignalDataset('Data/data.h5', split="train", resnet=True)
+validateSet = SignalDataset('Data/data.h5', split="validate", resnet=True)
+testSet = SignalDataset('Data/data.h5', split="test", resnet=True)
 
 dataloader = DataLoader(trainSet, batch_size=hyperVar["batch_size"], shuffle=True)
 validate_loader = DataLoader(validateSet, batch_size=hyperVar["batch_size"], shuffle=False)
@@ -50,21 +55,20 @@ test_loader = DataLoader(testSet, batch_size=hyperVar["batch_size"], shuffle=Fal
 
 # %% Structure for the NN: #
 
-class PeakHeightRegressor(nn.Module):
-    def __init__(self, f_signal=5001, h1=4096, h2=4096, h3=256, h4=128, h5=64, output=3):
-        super().__init__()
-
-        self.linear_stack = nn.Sequential(
-            nn.Linear(f_signal, h1),
-            nn.Linear(h1, h2),
-            nn.Linear(h2, output),
-
-        )
-
-
-    def forward(self, x):
-      logits = self.linear_stack(x)
-      return logits
+model = ResNet1D(
+    in_channels=1,
+    base_filters=128,
+    kernel_size=16,
+    stride=2,
+    n_block=18,
+    groups=1,
+    n_classes=3,
+    downsample_gap=6,
+    increasefilter_gap=12,
+    use_bn=True,
+    use_do=True,
+    verbose=False)
+model.to(device)
 
 
 
@@ -73,8 +77,8 @@ class PeakHeightRegressor(nn.Module):
 losses = []
 val_losses = []
 eps = []
-model = PeakHeightRegressor()
-criterion = nn.MSELoss()
+#Use MAE as the loss function
+criterion = nn.L1Loss()  # Mean Absolute Error (MAE)
 # Here I Only intend to plot the losses graph so only need for basic event every 1/100 epochs
 def supervised_train(model, rate, optim, device="cpu"):
     model.to(device)
@@ -95,6 +99,7 @@ def supervised_train(model, rate, optim, device="cpu"):
         return loss.item()
 
     return Engine(_update)
+
 
 def supervised_evaluator(model, device="cpu", scaling_params=None):
 
@@ -181,7 +186,7 @@ diffs = diffs.cpu().numpy() * 10**12  # Convert to pT for better readability
 
 plt.figure(figsize=(10, 6))
 plt.grid(True)
-plt.yscale('symlog', linthresh=1e-2)  # Log scale for better visibility of differences
+# plt.yscale('symlog', linthresh=1e-2)  # Log scale for better visibility of differences
 
 # plt.plot(intensities, diffs[:, 1], 'b.', label='Center Peak')
 plt.plot(intensities, diffs[:, 0], 'r.', label='Left Peak')
@@ -230,9 +235,10 @@ for i_ in range(start,start+n):
     peak_freqs = set.get_peak_freqs(i_)
     # peak_freqs = [peak_freqs[0].item(), 2000, peak_freqs[2].item()]
 
+    X_test = X_test.unsqueeze(0)  # Reshape to [1, channels, length] for ResNet
     Y_pred = model(X_test.to(device))
 
-    X_test_plot = X_test
+    X_test_plot = X_test.squeeze()
     Y_test_plot = Y_test
     Y_pred_plot = Y_pred
 

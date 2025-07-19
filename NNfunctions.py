@@ -5,8 +5,9 @@ from torch.utils.data import Dataset
 
 from ignite.metrics import Metric
 import json
+import h5py
 import numpy as np
-from model_creating_data.fft_pink_noise import peak_heights
+from Simulation.numpy_ffts.fft_pink_noise import peak_heights
 
 def scale_tensor(dat_raw, log=False, norm=False, minmax=False, tensor=False, resnet=False):
     sc_par = {}
@@ -67,19 +68,37 @@ def unscale_tensor(procss_data, params):
 
 
 class SignalDataset(Dataset):
-    def __init__(self, json_path, split="train", transfrom=scale_tensor, resnet=False):
+    def __init__(self, data_path, split="train", transfrom=scale_tensor, resnet=False):
+        
+        # Determine file type based on extension
+        if data_path.endswith('.h5') or data_path.endswith('.hdf5'):
+            # Load HDF5 data
+            with h5py.File(data_path, 'r') as h5_file:
+                sig_raw = h5_file[f'{split}/f_signals'][:]
+                clean_raw = h5_file[f'{split}/f_cSignal'][:]
+                self.F_B = h5_file[f'{split}/F_B'][:]
+                self.f = torch.tensor(h5_file['f'][:], dtype=torch.float64)
+                self.time = torch.tensor(h5_file['t'][:], dtype=torch.float64) if 't' in h5_file else None
+            
 
-        with open(json_path, "r") as f:
-            dat = json.load(f)
-        sig_raw = dat[split]["f_signals"]
-        clean_raw = dat[split]["f_cSignal"]
-        self.clean = clean_raw
-        self.F_B = dat[split]["F_B"]
-        self.f = torch.tensor(dat["f"], dtype=torch.float32)
+            self.clean = clean_raw
+            sig_raw = torch.tensor(sig_raw, dtype=torch.float64)
+            clean_raw = torch.tensor(clean_raw, dtype=torch.float64)
+            self.F_B = torch.tensor(self.F_B, dtype=torch.int32).unsqueeze(1)
+            
+        else:
+            # Load JSON data (original implementation)
+            with open(data_path, "r") as f:
+                dat = json.load(f)
+            sig_raw = dat[split]["f_signals"]
+            clean_raw = dat[split]["f_cSignal"]
+            self.clean = clean_raw
+            self.F_B = dat[split]["F_B"]
+            self.f = torch.tensor(dat["f"], dtype=torch.float32)
 
-        sig_raw = torch.tensor(sig_raw, dtype=torch.float32)
-        clean_raw = torch.tensor(clean_raw, dtype=torch.float32)
-        self.F_B = torch.tensor(self.F_B, dtype=torch.int32).unsqueeze(1)
+            sig_raw = torch.tensor(sig_raw, dtype=torch.float32)
+            clean_raw = torch.tensor(clean_raw, dtype=torch.float32)
+            self.F_B = torch.tensor(self.F_B, dtype=torch.int32).unsqueeze(1)
 
         amps = peak_heights(clean_raw, self.f, f_b=self.F_B, f_center=2000, dir=False)
 
@@ -95,6 +114,9 @@ class SignalDataset(Dataset):
 
     def get_freqs(self):
         return self.f
+    
+    def get_time_bins(self):
+        return self.time if self.time is not None else None
 
     def get_peak_freqs(self, idx):
         return [2000 - self.F_B[idx].item(), 2000, 2000+self.F_B[idx].item()]
@@ -104,6 +126,8 @@ class SignalDataset(Dataset):
 
     def get_clean_sig(self, idx):
         return self.clean[idx]
+    
+    
 
 
 class MeanRelativeError(Metric):

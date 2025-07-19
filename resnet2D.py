@@ -1,11 +1,12 @@
 # %% IMPORTS #
 from NNfunctions import *
-from resnet1d_master.resnet1d import ResNet1D
+import time
 
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from torch.optim import SGD, Adam
+from torchvision import models
 
 from ignite.engine import Engine, Events
 from ignite.handlers import EarlyStopping
@@ -25,14 +26,15 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # %% Parameters
 hyperVar = {
     # Data parameters
-    'batch_size': 32,
+    'batch_size': 64,
     'device': device,
 
     # Training parameters
     'optimizer': Adam,
-    'lr': 1e-3,
-    'n_epochs': 10,
-    'patience': 2,
+    'lr': 1e-4,
+    'n_epochs': 50
+    ,
+    'patience': 4,
     'validate_every': 10,  # Run validation every n iterations
 
     # Plotting parameters
@@ -43,34 +45,80 @@ hyperVar = {
 
 
 # %% First, IMPORTING DATA #
+start_time = time.time()
 
-trainSet = SignalDataset('model_creating_data/data.json', split="train", resnet=True)
-validateSet = SignalDataset('model_creating_data/data.json', split="validate", resnet=True)
-testSet = SignalDataset('model_creating_data/data.json', split="test", resnet=True)
+trainSet = SignalDataset('Data/data_stft.h5', split="train", resnet=True)
+validateSet = SignalDataset('Data/data_stft.h5', split="validate", resnet=True)
+testSet = SignalDataset('Data/data_stft.h5', split="test", resnet=True)
 
 dataloader = DataLoader(trainSet, batch_size=hyperVar["batch_size"], shuffle=True)
 validate_loader = DataLoader(validateSet, batch_size=hyperVar["batch_size"], shuffle=False)
 test_loader = DataLoader(testSet, batch_size=hyperVar["batch_size"], shuffle=False)
 
+load_time = time.time() - start_time
+print(f"Data loaded in {load_time:.2f} seconds")
+print(f"Dataset sizes: Train={len(trainSet)}, Validation={len(validateSet)}, Test={len(testSet)}")
+
 
 # %% Structure for the NN: #
 
-model = ResNet1D(
-    in_channels=1,
-    base_filters=128,
-    kernel_size=16,
-    stride=2,
-    n_block=18,
-    groups=1,
-    n_classes=3,
-    downsample_gap=6,
-    increasefilter_gap=12,
-    use_bn=True,
-    use_do=True,
-    verbose=False)
-model.to(device)
+class ResNet2D(nn.Module):
+    def __init__(self, n_classes=3, pretrained=True, freeze_pretrained=True):
+        """
+        Initializes a 2D ResNet model adapted for single-channel input.
+        Args:
+            n_classes (int): The number of output values to predict.
+            pretrained (bool): Whether to use pre-trained weights from ImageNet.
+            freeze_pretrained (bool): If True, freezes all layers except the modified
+                                     input and output layers.
+        """
+        super().__init__()
+        # Load a pre-trained ResNet18 model
+        self.resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT if pretrained else None)
 
+        # --- Freeze pre-trained layers if requested ---
+        if pretrained and freeze_pretrained:
+            for param in self.resnet.parameters():
+                param.requires_grad = False
 
+        # --- Adapt for 1-channel (grayscale) input ---
+        original_conv1 = self.resnet.conv1
+        self.resnet.conv1 = nn.Conv2d(
+            in_channels=1,
+            out_channels=original_conv1.out_channels,
+            kernel_size=original_conv1.kernel_size,
+            stride=original_conv1.stride,
+            padding=original_conv1.padding,
+            bias=False
+        )
+        if pretrained:
+            self.resnet.conv1.weight.data = original_conv1.weight.data.sum(dim=1, keepdim=True)
+
+        # --- Adapt the final layer for regression ---
+        num_ftrs = self.resnet.fc.in_features
+        self.resnet.fc = nn.Linear(num_ftrs, n_classes)
+
+        # --- Unfreeze the new layers so they can be trained ---
+        # The parameters of newly constructed modules have requires_grad=True by default,
+        # so this is explicitly ensuring they are trainable even if the rest is frozen.
+        if pretrained and freeze_pretrained:
+            for param in self.resnet.conv1.parameters():
+                param.requires_grad = True
+            for param in self.resnet.fc.parameters():
+                param.requires_grad = True
+
+    def forward(self, x):
+        """
+        Forward pass through the model.
+        Args:
+            x (torch.Tensor): Input tensor of shape (batch, 1, freq_bins, time_bins)
+        Returns:
+            torch.Tensor: The model's output.
+        """
+        return self.resnet(x)
+
+model = ResNet2D(n_classes=3, pretrained=True, freeze_pretrained=False)
+model = model.double()  # Convert model to float64
 
 # %% Defining training engine and Events
 
@@ -78,7 +126,7 @@ losses = []
 val_losses = []
 eps = []
 #Use MAE as the loss function
-criterion = nn.L1Loss()  # Mean Absolute Error (MAE)
+criterion = nn.MSELoss()  # Mean Absolute Error (MAE)
 # Here I Only intend to plot the losses graph so only need for basic event every 1/100 epochs
 def supervised_train(model, rate, optim, device="cpu"):
     model.to(device)
@@ -178,26 +226,7 @@ state = evaluator.run(test_loader)
 rel_errors = state.metrics["rel_error_3"]
 print(f"Relative Error (%) Y_pred / Y_true: Left = {rel_errors[0]:.2f}, Center = {rel_errors[1]:.2f}, Right = {rel_errors[2]:.2f}")
 
-# Plotting MDEPerIntensity
-intensities, diffs = state.metrics["mde_per_intensity"]  # intensities: [N,], diffs: [N,3]
-# Convert to numpy if not already
-intensities = intensities.cpu().numpy()
-diffs = diffs.cpu().numpy() * 10**12  # Convert to pT for better readability
 
-plt.figure(figsize=(10, 6))
-plt.grid(True)
-# plt.yscale('symlog', linthresh=1e-2)  # Log scale for better visibility of differences
-
-# plt.plot(intensities, diffs[:, 1], 'b.', label='Center Peak')
-plt.plot(intensities, diffs[:, 0], 'r.', label='Left Peak')
-plt.plot(intensities, diffs[:, 2], 'g.',label='Right Peak')
-# Connect left and right dots for each intensity
-for i in range(len(intensities)):
-    plt.plot([intensities[i], intensities[i]], [diffs[i, 0], diffs[i, 2]], 'k-', alpha=0.5)
-plt.title("Mean Deviation Error per Intensity")
-plt.xlabel("Intensity (B0) [T]")
-plt.ylabel("Mean Deviation Error [pT]")
-plt.legend()
 
 # Seeing how the losses change:
 plt.figure()
@@ -285,4 +314,59 @@ for i_ in range(start,start+n):
 #    sigPlot[i].set_xticklabels([f"{xbor[0]:.0f}", "", "", "", f"{xbor[1]:.0f}"])
 
 plt.tight_layout(rect=[0.03, 0.03, 1, 0.88])
+
+# %% Predicted vs True plots
+# Get unscaled true and predicted values
+Y_true_unscaled, Y_pred_unscaled, diffs = state.metrics["mde_per_intensity"]
+Y_true_unscaled = Y_true_unscaled.cpu().numpy()
+Y_pred_unscaled = Y_pred_unscaled.cpu().numpy()
+diffs = diffs.cpu().numpy() * 1e12  # Convert to pT for better readability
+
+# For MDE plot, we need intensities and diffs
+intensities = Y_true_unscaled[:, 0]
+
+# Plotting MDEPerIntensity
+plt.figure(figsize=(10, 6))
+plt.grid(True)
+# plt.yscale('symlog', linthresh=1e-2)  # Log scale for better visibility of differences
+
+# plt.plot(intensities, diffs[:, 1], 'b.', label='Center Peak')
+plt.plot(intensities, diffs[:, 0], 'r.', label='Left Peak')
+plt.plot(intensities, diffs[:, 2], 'g.',label='Right Peak')
+# Connect left and right dots for each intensity
+for i in range(len(intensities)):
+    plt.plot([intensities[i], intensities[i]], [diffs[i, 0], diffs[i, 2]], 'k-', alpha=0.5)
+plt.title("Mean Deviation Error per Intensity")
+plt.xlabel("Intensity (B0) [T]")
+plt.ylabel("Mean Deviation Error [pT]")
+plt.legend()
+
+
+peak_names = ['Left', 'Center', 'Right']
+fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+fig.suptitle('Predicted vs. True Peak Heights', fontsize=16)
+
+for i, (ax, name) in enumerate(zip(axes, peak_names)):
+    true_vals = Y_true_unscaled[:, i]
+    pred_vals = Y_pred_unscaled[:, i]
+
+    # Scatter plot
+    ax.scatter(true_vals, pred_vals, alpha=0.5, label='Predictions')
+
+    # Linear fit
+    coeffs = np.polyfit(true_vals, pred_vals, 1)
+    poly = np.poly1d(coeffs)
+    fit_line = poly(true_vals)
+
+    r_squared = np.corrcoef(true_vals, pred_vals)[0, 1] ** 2
+
+    ax.plot(true_vals, fit_line, 'r-', label=f'Linear Fit (y={coeffs[0]:.2f}x + {coeffs[1]:.2e}, R²={r_squared:.2f})')
+
+    ax.set_title(f'{name} Peak')
+    ax.set_xlabel('True Height')
+    ax.set_ylabel('Predicted Height')
+    ax.legend()
+    ax.grid(True)
+
+plt.tight_layout(rect=[0, 0, 1, 0.96])
 plt.show()
