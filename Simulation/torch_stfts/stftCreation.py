@@ -7,7 +7,7 @@ import numpy as np
 from tqdm import trange
 
 add_signals = False
-testing = False
+testing = True
 # Stft parameters
 fs = 10000
 total_cycles = 100
@@ -15,13 +15,13 @@ overlap_perc = 0.85
 cycles_per_window = 5  # Number of cycles in one window
 
 # Small for cpu, large for gpu
-batch_size = 64 if torch.cuda.is_available() else 4
+batch_size = 16 if torch.cuda.is_available() else 4
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 if testing:
-    n_trains = 10
+    n_trains = 20
     n_validate = 10
     n_tests = 10
 else:
@@ -52,9 +52,8 @@ data_creation_times = {'train': 0, 'validate': 0, 'test': 0}
 #   CREATING TRAIN NOISE + SIGNAL  #
 train_start_time = time.time()
 n = n_trains
-num_batches = (n + batch_size - 1) // batch_size
-clear_stft = torch.empty(n, stft_size[0], stft_size[1], device=device)  # Shape: (n_trains, n_freqs, n_time_bins)
-noisy_stft = torch.empty(n, stft_size[0], stft_size[1], device=device)
+clear_stft = torch.empty(n, stft_size[1], stft_size[2], device=device)  # Shape: (n_trains, n_freqs, n_time_bins)
+noisy_stft = torch.empty(n, stft_size[1], stft_size[2], device=device)
 Corresponding_F_B = []
 
 # printing the size of the clear_stft and noisy_stft tensors
@@ -142,9 +141,8 @@ print("")
 #  CREATING VALIDATION NOISE + SIGNAL  #
 
 n = n_validate
-num_batches = (n + batch_size - 1) // batch_size
-clear_stft = torch.empty(n, stft_size[0], stft_size[1], device=device)  # Shape: (n_trains, n_freqs, n_time_bins)
-noisy_stft = torch.empty(n, stft_size[0], stft_size[1], device=device)
+clear_stft = torch.empty(n, stft_size[1], stft_size[2], device=device)  # Shape: (n_trains, n_freqs, n_time_bins)
+noisy_stft = torch.empty(n, stft_size[1], stft_size[2], device=device)
 Corresponding_F_B = []
 
 validate_start_time = time.time()
@@ -209,8 +207,9 @@ print(f"F_B: {validate_F_B.shape}")
 print("")
 
 #   CREATING TEST NOISE AND SIGNAL    #
-clear_stft = torch.empty(n_tests, stft_size[0], stft_size[1], device=device)
-noisy_stft = torch.empty(n_tests, stft_size[0], stft_size[1], device=device)
+n = n_tests
+clear_stft = torch.empty(n, stft_size[1], stft_size[2], device=device)  # Shape: (n_trains, n_freqs, n_time_bins)
+noisy_stft = torch.empty(n, stft_size[1], stft_size[2], device=device)
 Corresponding_F_B = []
 
 test_start_time = time.time()

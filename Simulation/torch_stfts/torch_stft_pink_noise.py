@@ -204,8 +204,8 @@ def generate_voltage_signal(I0, B0, F_B, dt, start_time, end_time, device='cpu')
         F_B = F_B.expand(batch_size)
     
     # Calculate the signal components with proper broadcasting
-    II = I0.view(batch_size, 1) * torch.sin(2 * torch.pi * F_c * Time)  # Current signal
-    BB = B0.view(batch_size, 1) * torch.sin(2 * torch.pi * F_B.view(batch_size, 1) * Time)  # Magnetic field signal
+    II = I0.unsqueeze(-1) * torch.sin(2 * torch.pi * F_c * Time)  # Current signal
+    BB = B0.unsqueeze(-1) * torch.sin(2 * torch.pi * F_B.unsqueeze(-1) * Time)  # Magnetic field signal
     hh = BB / B_k
     
     # Calculate voltage with batch as first dimension
@@ -252,7 +252,20 @@ def Signal_Noise_FFts(I0, B0, F_B, noise_strength,
     Noise, _, _= make_noise(Time, noise_strength, pink_percentage, device=device)
 
     # COMBINED SIGNAL
-    Signal = Noise.squeeze(0) + Voltage
+    # Handle batched tensors properly
+    if Noise.dim() > Voltage.dim():
+        # If Noise has more dimensions than Voltage, ensure Voltage has batch dimension
+        Signal = Noise + Voltage.unsqueeze(0)
+    elif Noise.dim() < Voltage.dim():
+        # If Voltage has more dimensions than Noise, ensure Noise is expanded properly
+        # Squeeze only if Noise has unnecessary dimensions
+        if Noise.dim() == 2:
+            Signal = Noise + Voltage
+        else:
+            Signal = Noise.squeeze(0) + Voltage
+    else:
+        # Same number of dimensions, simple addition
+        Signal = Noise + Voltage
 
     if is_window:
         # Window the signal to prevent spectral leakage when padding
@@ -283,9 +296,16 @@ def my_stft(I0, B0, F_B, noise_strength,
 
     # Period is 1 / GCD of all frequency components
     if Tperiod is None:
-        # Compute GCD
+        # Compute GCD - for batch processing, we'll use a common period
+        # This is a simplification - ideally each batch item would have its own period
         if isinstance(F_B, torch.Tensor):
-            F_B_val = F_B.item()
+            if F_B.dim() > 0:
+                # For batch, use the first item's F_B value for period calculation
+                # This is a compromise - a more accurate approach would calculate different 
+                # periods for each batch item, but that would complicate the implementation
+                F_B_val = F_B[0].item()
+            else:
+                F_B_val = F_B.item()
         else:
             F_B_val = F_B
         freq_gcd = reduce(gcd, [2000 - F_B_val, 2000, 2000 + F_B_val])
@@ -315,6 +335,10 @@ def my_stft(I0, B0, F_B, noise_strength,
     # Create window tensor on the specified device
     window = torch.ones(n_fft, device=device)
     
+    # Check if Signal has batch dimension
+    if Signal.dim() == 1:
+        Signal = Signal.unsqueeze(0)  # Add batch dimension if missing
+    
     stft_result = torch.stft(Signal, n_fft=n_fft, hop_length=hop_length,
                              return_complex=True,
                              window=window,
@@ -330,7 +354,13 @@ def my_stft(I0, B0, F_B, noise_strength,
         # Return only around the center frequency (2000 Hz)
         freq_mask = (freqs_stft >= 1950) & (freqs_stft <= 2050)
         freqs_zoom = freqs_stft[freq_mask]
-        mag_zoom = mag[0, freq_mask, :]
+        
+        # Handle batch dimension properly
+        if mag.dim() == 3:  # [batch_size, freq_bins, time_bins]
+            mag_zoom = mag[:, freq_mask, :]
+        else:
+            # Legacy case for single item
+            mag_zoom = mag[0, freq_mask, :]
 
         return mag_zoom, freqs_zoom, time_bins
 

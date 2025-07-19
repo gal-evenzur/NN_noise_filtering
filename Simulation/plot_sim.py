@@ -1,6 +1,8 @@
 # %% Imports
 import sys
-research_path = r"C:\Users\galev\Documents\Uni\Y3S2\Research"  # or use a dynamic path
+import os
+current_file = os.path.abspath(__file__)
+research_path = os.path.dirname(os.path.dirname(current_file))
 if research_path not in sys.path:
     sys.path.append(research_path)
 
@@ -24,7 +26,7 @@ real_b = False  # Use real B values for highlighting
 dataSet = 'train'  # Choose 'train', 'validate', or 'test'
 
 # Choose which data set to show
-start = 5
+start = 0
 n = 3
 
 if is_stft:
