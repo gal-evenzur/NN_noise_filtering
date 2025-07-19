@@ -25,13 +25,14 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # %% Parameters
 hyperVar = {
     # Data parameters
-    'batch_size': 32,
+    'batch_size': 64,
     'device': device,
 
     # Training parameters
     'optimizer': Adam,
-    'lr': 1e-6,
-    'n_epochs': 100,
+    'lr': 1e-4,
+    'n_epochs': 50
+    ,
     'patience': 4,
     'validate_every': 10,  # Run validation every n iterations
 
@@ -110,7 +111,7 @@ class ResNet2D(nn.Module):
         """
         return self.resnet(x)
 
-model = ResNet2D(n_classes=3, pretrained=True, freeze_pretrained=True)
+model = ResNet2D(n_classes=3, pretrained=True, freeze_pretrained=False)
 
 # %% Defining training engine and Events
 
@@ -118,7 +119,7 @@ losses = []
 val_losses = []
 eps = []
 #Use MAE as the loss function
-criterion = nn.L1Loss()  # Mean Absolute Error (MAE)
+criterion = nn.MSELoss()  # Mean Absolute Error (MAE)
 # Here I Only intend to plot the losses graph so only need for basic event every 1/100 epochs
 def supervised_train(model, rate, optim, device="cpu"):
     model.to(device)
@@ -218,26 +219,7 @@ state = evaluator.run(test_loader)
 rel_errors = state.metrics["rel_error_3"]
 print(f"Relative Error (%) Y_pred / Y_true: Left = {rel_errors[0]:.2f}, Center = {rel_errors[1]:.2f}, Right = {rel_errors[2]:.2f}")
 
-# Plotting MDEPerIntensity
-intensities, diffs = state.metrics["mde_per_intensity"]  # intensities: [N,], diffs: [N,3]
-# Convert to numpy if not already
-intensities = intensities.cpu().numpy()
-diffs = diffs.cpu().numpy() * 10**12  # Convert to pT for better readability
 
-plt.figure(figsize=(10, 6))
-plt.grid(True)
-# plt.yscale('symlog', linthresh=1e-2)  # Log scale for better visibility of differences
-
-# plt.plot(intensities, diffs[:, 1], 'b.', label='Center Peak')
-plt.plot(intensities, diffs[:, 0], 'r.', label='Left Peak')
-plt.plot(intensities, diffs[:, 2], 'g.',label='Right Peak')
-# Connect left and right dots for each intensity
-for i in range(len(intensities)):
-    plt.plot([intensities[i], intensities[i]], [diffs[i, 0], diffs[i, 2]], 'k-', alpha=0.5)
-plt.title("Mean Deviation Error per Intensity")
-plt.xlabel("Intensity (B0) [T]")
-plt.ylabel("Mean Deviation Error [pT]")
-plt.legend()
 
 # Seeing how the losses change:
 plt.figure()
@@ -325,4 +307,59 @@ for i_ in range(start,start+n):
 #    sigPlot[i].set_xticklabels([f"{xbor[0]:.0f}", "", "", "", f"{xbor[1]:.0f}"])
 
 plt.tight_layout(rect=[0.03, 0.03, 1, 0.88])
+
+# %% Predicted vs True plots
+# Get unscaled true and predicted values
+Y_true_unscaled, Y_pred_unscaled, diffs = state.metrics["mde_per_intensity"]
+Y_true_unscaled = Y_true_unscaled.cpu().numpy()
+Y_pred_unscaled = Y_pred_unscaled.cpu().numpy()
+diffs = diffs.cpu().numpy() * 1e12  # Convert to pT for better readability
+
+# For MDE plot, we need intensities and diffs
+intensities = Y_true_unscaled[:, 0]
+
+# Plotting MDEPerIntensity
+plt.figure(figsize=(10, 6))
+plt.grid(True)
+# plt.yscale('symlog', linthresh=1e-2)  # Log scale for better visibility of differences
+
+# plt.plot(intensities, diffs[:, 1], 'b.', label='Center Peak')
+plt.plot(intensities, diffs[:, 0], 'r.', label='Left Peak')
+plt.plot(intensities, diffs[:, 2], 'g.',label='Right Peak')
+# Connect left and right dots for each intensity
+for i in range(len(intensities)):
+    plt.plot([intensities[i], intensities[i]], [diffs[i, 0], diffs[i, 2]], 'k-', alpha=0.5)
+plt.title("Mean Deviation Error per Intensity")
+plt.xlabel("Intensity (B0) [T]")
+plt.ylabel("Mean Deviation Error [pT]")
+plt.legend()
+
+
+peak_names = ['Left', 'Center', 'Right']
+fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+fig.suptitle('Predicted vs. True Peak Heights', fontsize=16)
+
+for i, (ax, name) in enumerate(zip(axes, peak_names)):
+    true_vals = Y_true_unscaled[:, i]
+    pred_vals = Y_pred_unscaled[:, i]
+
+    # Scatter plot
+    ax.scatter(true_vals, pred_vals, alpha=0.5, label='Predictions')
+
+    # Linear fit
+    coeffs = np.polyfit(true_vals, pred_vals, 1)
+    poly = np.poly1d(coeffs)
+    fit_line = poly(true_vals)
+
+    r_squared = np.corrcoef(true_vals, pred_vals)[0, 1] ** 2
+
+    ax.plot(true_vals, fit_line, 'r-', label=f'Linear Fit (y={coeffs[0]:.2f}x + {coeffs[1]:.2e}, R²={r_squared:.2f})')
+
+    ax.set_title(f'{name} Peak')
+    ax.set_xlabel('True Height')
+    ax.set_ylabel('Predicted Height')
+    ax.legend()
+    ax.grid(True)
+
+plt.tight_layout(rect=[0, 0, 1, 0.96])
 plt.show()

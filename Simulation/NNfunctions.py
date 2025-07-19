@@ -169,6 +169,7 @@ class MDEPerIntensity(Metric):
     def reset(self):
         # Store all intensities and differences for plotting
         self._intensities = []
+        self._preds = []
         self._diffs = []
 
     def update(self, output):
@@ -182,17 +183,20 @@ class MDEPerIntensity(Metric):
         y_p, y_t = output[0].detach(), output[1].detach()
         # y_t and y_p: [batch_size, 3]
         # Intensity is y_t[:, 0] (or y_t[:, 2])
-        intensities = y_t[:, 0]
+        intensities = y_t
+        preds = y_p
         diffs = (y_p - y_t)  # shape: [batch_size, 3]
 
         self._intensities.append(intensities)
+        self._preds.append(preds)
         self._diffs.append(diffs)
 
     def compute(self):
         # Concatenate all batches
-        intensities = torch.concatenate(self._intensities, dim=0)  # shape: [N,]
+        intensities = torch.concatenate(self._intensities, dim=0)  # shape: [N, 3]
+        preds = torch.concatenate(self._preds, dim=0)              # shape: [N, 3]
         diffs = torch.concatenate(self._diffs, dim=0)              # shape: [N, 3]
-        return intensities, diffs
+        return intensities, preds, diffs
 
 
 def score_function(engine):
