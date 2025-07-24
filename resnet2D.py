@@ -7,6 +7,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from torch.optim import SGD, Adam
 from torchvision import models
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from ignite.engine import Engine, Events
 from ignite.handlers import EarlyStopping
@@ -23,18 +24,18 @@ import numpy as np
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# %% Parameters
+# %%% PARAMS # 
 hyperVar = {
     # Data parameters
-    'batch_size': 64,
+    'batch_size': 8,
     'device': device,
 
     # Training parameters
     'optimizer': Adam,
-    'lr': 1e-4,
-    'n_epochs': 50
+    'lr': 3e-5,
+    'n_epochs': 4
     ,
-    'patience': 4,
+    'patience': 2,
     'validate_every': 10,  # Run validation every n iterations
 
     # Plotting parameters
@@ -44,7 +45,7 @@ hyperVar = {
             }
 
 
-# %% First, IMPORTING DATA #
+# %% &&&&&& IMPORTING DATA &&&&&&
 start_time = time.time()
 
 trainSet = SignalDataset('Data/data_stft.h5', split="train", resnet=True)
@@ -61,11 +62,10 @@ print(f"Dataset sizes: Train={len(trainSet)}, Validation={len(validateSet)}, Tes
 
 
 # %% Structure for the NN: #
-
-class ResNet2D(nn.Module):
-    def __init__(self, n_classes=3, pretrained=True, freeze_pretrained=True):
+class EfficientNetB0(nn.Module):
+    def __init__(self, n_classes=3, pretrained=True, freeze_pretrained=False):
         """
-        Initializes a 2D ResNet model adapted for single-channel input.
+        Initializes a EfficientNetB0 model adapted for single-channel input.
         Args:
             n_classes (int): The number of output values to predict.
             pretrained (bool): Whether to use pre-trained weights from ImageNet.
@@ -73,38 +73,36 @@ class ResNet2D(nn.Module):
                                      input and output layers.
         """
         super().__init__()
-        # Load a pre-trained ResNet18 model
-        self.resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT if pretrained else None)
+        # Load a pre-trained EfficientNetB0 model
+        self.net = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT if pretrained else None)
 
         # --- Freeze pre-trained layers if requested ---
         if pretrained and freeze_pretrained:
-            for param in self.resnet.parameters():
+            for param in self.net.parameters():
                 param.requires_grad = False
 
         # --- Adapt for 1-channel (grayscale) input ---
-        original_conv1 = self.resnet.conv1
-        self.resnet.conv1 = nn.Conv2d(
+        original_conv = self.net.features[0][0]  # First conv layer in EfficientNet
+        self.net.features[0][0] = nn.Conv2d(
             in_channels=1,
-            out_channels=original_conv1.out_channels,
-            kernel_size=original_conv1.kernel_size,
-            stride=original_conv1.stride,
-            padding=original_conv1.padding,
+            out_channels=original_conv.out_channels,
+            kernel_size=original_conv.kernel_size,
+            stride=original_conv.stride,
+            padding=original_conv.padding,
             bias=False
         )
         if pretrained:
-            self.resnet.conv1.weight.data = original_conv1.weight.data.sum(dim=1, keepdim=True)
+            self.net.features[0][0].weight.data = original_conv.weight.data.sum(dim=1, keepdim=True)
 
         # --- Adapt the final layer for regression ---
-        num_ftrs = self.resnet.fc.in_features
-        self.resnet.fc = nn.Linear(num_ftrs, n_classes)
+        num_ftrs = self.net.classifier[1].in_features
+        self.net.classifier[1] = nn.Linear(num_ftrs, n_classes)
 
         # --- Unfreeze the new layers so they can be trained ---
-        # The parameters of newly constructed modules have requires_grad=True by default,
-        # so this is explicitly ensuring they are trainable even if the rest is frozen.
         if pretrained and freeze_pretrained:
-            for param in self.resnet.conv1.parameters():
+            for param in self.net.features[0][0].parameters():
                 param.requires_grad = True
-            for param in self.resnet.fc.parameters():
+            for param in self.net.classifier[1].parameters():
                 param.requires_grad = True
 
     def forward(self, x):
@@ -115,24 +113,23 @@ class ResNet2D(nn.Module):
         Returns:
             torch.Tensor: The model's output.
         """
-        return self.resnet(x)
+        return self.net(x)
 
-model = ResNet2D(n_classes=3, pretrained=True, freeze_pretrained=False)
+model = EfficientNetB0(n_classes=3, pretrained=True, freeze_pretrained=False)
 model = model.double()  # Convert model to float64
 
-# %% Defining training engine and Events
+# %% ENGINE SETUP #
 
 losses = []
 val_losses = []
 eps = []
 #Use MAE as the loss function
-criterion = nn.MSELoss()  # Mean Absolute Error (MAE)
+criterion = nn.L1Loss()  # Mean Absolute Error (MAE)
 # Here I Only intend to plot the losses graph so only need for basic event every 1/100 epochs
 def supervised_train(model, rate, optim, device="cpu"):
     model.to(device)
     optimizer = optim(model.parameters(), lr = rate)
-    losses = []
-    eps = []
+
 
     def _update(engine, batch):
         model.train()
@@ -149,7 +146,7 @@ def supervised_train(model, rate, optim, device="cpu"):
     return Engine(_update)
 
 
-def supervised_evaluator(model, device="cpu", scaling_params=None):
+def supervised_evaluator(model, device="cpu"):
 
     def _interference(engine, batch):
         model.eval()
@@ -162,37 +159,17 @@ def supervised_evaluator(model, device="cpu", scaling_params=None):
 
     engine = Engine(_interference)
 
-    if scaling_params:
-        def apply_unscaling(output):
-            y_pred_scaled = unscale_tensor(output[0], scaling_params)
-            y_true_scaled = unscale_tensor(output[1], scaling_params)
-            return y_pred_scaled, y_true_scaled
-
-        transform_func = apply_unscaling
-    else:
-        transform_func = lambda x: x
-
     # Attach loss metric
     Loss(criterion,
         output_transform=lambda x: (x[0], x[1])
     ).attach(engine, 'loss')
-
-    # Attach Mean Relative Error metric
-    MeanRelativeError(
-        output_transform=transform_func, device=device
-    ).attach(engine, 'rel_error_3')
-
-    # Attach MDEPerIntensity metric
-    MDEPerIntensity(
-        output_transform=transform_func, device=device
-    ).attach(engine, 'mde_per_intensity')
 
     return engine
 
 trainer = supervised_train(model, optim=hyperVar['optimizer'], device=device, rate = hyperVar["lr"])
 
 X_parms, Y_parms = testSet.unscale()
-evaluator = supervised_evaluator(model, device=device, scaling_params=Y_parms)
+evaluator = supervised_evaluator(model, device=device)
 
 handler = EarlyStopping(
     patience=hyperVar['patience'],  # Number of epochs to wait for improvement
@@ -210,23 +187,44 @@ def run_validation_loss_track(engine):
     # Run validation
     evaluator.run(validate_loader)
     val_losses.append(evaluator.state.metrics['loss'])
-
+    print(f"Epoch {trainer.state.epoch} - Training Loss: {trainer.state.output:.4f}, "
+          f"Validation Loss: {evaluator.state.metrics['loss']:.4f}")
 
 
 ProgressBar().attach(trainer, output_transform=lambda x: {'loss': x})
 
-# %% Training NN and recording events
-# Will take some time
+# %% ********TRAINING*********
+print("Starting training...")
 trainer.run(dataloader, max_epochs=hyperVar['n_epochs'])
 
 
-# %%   PLOTTING THE FILTERING TO SEE IF IT WORKED   #
+# %%   ------Evaluation of the model------
+set = testSet
+f = set.get_freqs()
+
+X_params, Y_params = set.unscale()
+
+def apply_unscaling(output):
+    y_pred_scaled = unscale_tensor(output[0], Y_params)
+    y_true_scaled = unscale_tensor(output[1], Y_params)
+    return y_pred_scaled, y_true_scaled
+transform_func = lambda x: apply_unscaling(x)
+
+MeanRelativeError(
+    output_transform=transform_func, device=device
+).attach(evaluator, 'rel_error_3')
+
+PeakComparison(
+    output_transform=transform_func, device=device
+).attach(evaluator, 'peak_comparison')
+
+
 print("Python <<<<< legit everything else (except C)\n")
 state = evaluator.run(test_loader)
 rel_errors = state.metrics["rel_error_3"]
 print(f"Relative Error (%) Y_pred / Y_true: Left = {rel_errors[0]:.2f}, Center = {rel_errors[1]:.2f}, Right = {rel_errors[2]:.2f}")
 
-
+# %% -------Plotting evaluation--------
 
 # Seeing how the losses change:
 plt.figure()
@@ -246,23 +244,18 @@ fig.text(0.6, 0.01, 'f [Hz]', ha='center', fontsize=12)
 fig.text(0.01, 0.5, 'FFT', ha='center', rotation='vertical', fontsize=12)
 import matplotlib.lines as mlines
 
-# Create proxy artists
 data_handle = mlines.Line2D([], [], color='black', marker='o', linestyle='None', label='Data')
 pred_handle = mlines.Line2D([], [], color='blue', marker='o', linestyle='None', label='Prediction')
 
 # Add a figure-level legend
 fig.legend(handles=[pred_handle, data_handle],
            loc='upper center', ncol=3, fontsize=10, frameon=False)
-set = testSet
-f = set.get_freqs()
 
-X_params, Y_params = set.unscale()
-
+# Plotting the signals with the peaks
 for i_ in range(start,start+n):
     X_test,Y_test = set[i_]
     clean_sig = set.get_clean_sig(i_)
     peak_freqs = set.get_peak_freqs(i_)
-    # peak_freqs = [peak_freqs[0].item(), 2000, peak_freqs[2].item()]
 
     X_test = X_test.unsqueeze(0)  # Reshape to [1, channels, length] for ResNet
     Y_pred = model(X_test.to(device))
@@ -315,9 +308,8 @@ for i_ in range(start,start+n):
 
 plt.tight_layout(rect=[0.03, 0.03, 1, 0.88])
 
-# %% Predicted vs True plots
-# Get unscaled true and predicted values
-Y_true_unscaled, Y_pred_unscaled, diffs = state.metrics["mde_per_intensity"]
+# Predicted vs True plots
+Y_true_unscaled, Y_pred_unscaled, diffs = state.metrics["peak_comparison"]
 Y_true_unscaled = Y_true_unscaled.cpu().numpy()
 Y_pred_unscaled = Y_pred_unscaled.cpu().numpy()
 diffs = diffs.cpu().numpy() * 1e12  # Convert to pT for better readability
@@ -347,8 +339,8 @@ fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 fig.suptitle('Predicted vs. True Peak Heights', fontsize=16)
 
 for i, (ax, name) in enumerate(zip(axes, peak_names)):
-    true_vals = Y_true_unscaled[:, i]
-    pred_vals = Y_pred_unscaled[:, i]
+    true_vals = Y_true_unscaled[:, i] * 1e12 # Convert to pT
+    pred_vals = Y_pred_unscaled[:, i] * 1e12
 
     # Scatter plot
     ax.scatter(true_vals, pred_vals, alpha=0.5, label='Predictions')
@@ -363,10 +355,11 @@ for i, (ax, name) in enumerate(zip(axes, peak_names)):
     ax.plot(true_vals, fit_line, 'r-', label=f'Linear Fit (y={coeffs[0]:.2f}x + {coeffs[1]:.2e}, R²={r_squared:.2f})')
 
     ax.set_title(f'{name} Peak')
-    ax.set_xlabel('True Height')
-    ax.set_ylabel('Predicted Height')
+    ax.set_xlabel('True Height [pT]')
+    ax.set_ylabel('Predicted Height [pT]')
     ax.legend()
     ax.grid(True)
 
 plt.tight_layout(rect=[0, 0, 1, 0.96])
 plt.show()
+# %%

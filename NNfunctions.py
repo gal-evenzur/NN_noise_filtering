@@ -175,6 +175,43 @@ class MeanRelativeError(Metric):
     def compute(self):
         return ( self._sum / self._count).cpu().numpy()  # shape: (3,)
 
+class PeakComparison(Metric):
+    # returns: real_peaks, predicted_peaks, differences
+    def __init__(self, output_transform=lambda x: x, device="cpu"):
+        self._device = device
+        self._batch_index = 0
+        super(PeakComparison, self).__init__(output_transform=output_transform, device=device)
+
+
+        self._real_peaks = None
+        self._predicted_peaks = None
+        self._differences = None
+
+    def reset(self):
+        # Initialize tensors to store batch results efficiently
+        self._real_peaks = []
+        self._predicted_peaks = []
+        self._differences = []
+
+    def update(self, output):
+        """
+        Updates the metric's state with the current batch's predictions and true values.
+
+        Args:
+            output (tuple): A tuple containing `(y_pred, y_true)` after applying output_transform.
+        """
+        y_p, y_t = output[0].detach(), output[1].detach()
+        # y_t and y_p: [batch_size, 3]
+        self._real_peaks.append(y_t)
+        self._predicted_peaks.append(y_p)
+        self._differences.append(y_p - y_t)
+
+    def compute(self):
+        real_peaks = torch.cat(self._real_peaks, dim=0)
+        predicted_peaks = torch.cat(self._predicted_peaks, dim=0)
+        differences = torch.cat(self._differences, dim=0)
+        return real_peaks, predicted_peaks, differences
+
 
 class MDEPerIntensity(Metric):
     """

@@ -7,7 +7,7 @@ import numpy as np
 from tqdm import trange
 
 add_signals = False
-testing = True
+testing = False
 # Stft parameters
 fs = 10000
 total_cycles = 100
@@ -25,9 +25,9 @@ if testing:
     n_validate = 10
     n_tests = 10
 else:
-    n_trains = 64 * 20  # 1280
-    n_validate = 64 * 1  # 64
-    n_tests = 64 * 1
+    n_trains = 64 * 20  # = 1280
+    n_validate = 64 * 3  # = 192
+    n_tests = 64 * 3
 
 # Finding out the size of stft #
 
