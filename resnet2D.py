@@ -30,13 +30,15 @@ hyperVar = {
     'batch_size': 8,
     'device': device,
 
-    # Training parameters
+    # Optimiser parameters
     'optimizer': Adam,
-    'lr': 3e-5,
-    'n_epochs': 4
-    ,
+    'lr': 1e-4,
+    'weight_decay': 1e-5,
+    'amsgrad': False, 
+
+    # Training procedure parameters
+    'n_epochs': 4,
     'patience': 2,
-    'validate_every': 10,  # Run validation every n iterations
 
     # Plotting parameters
     'n_plotted': 10,
@@ -123,13 +125,18 @@ model = model.double()  # Convert model to float64
 losses = []
 val_losses = []
 eps = []
-#Use MAE as the loss function
-criterion = nn.L1Loss()  # Mean Absolute Error (MAE)
-# Here I Only intend to plot the losses graph so only need for basic event every 1/100 epochs
-def supervised_train(model, rate, optim, device="cpu"):
-    model.to(device)
-    optimizer = optim(model.parameters(), lr = rate)
 
+criterion = nn.L1Loss()  # Mean Absolute Error (MAE)
+optimizer = hyperVar['optimizer'](
+    model.parameters(), 
+    lr=hyperVar['lr'], 
+    weight_decay=hyperVar['weight_decay'],
+    amsgrad=hyperVar['amsgrad']
+)
+
+def supervised_train(model, device="cpu"):
+    model.to(device)
+    optimizer.zero_grad() 
 
     def _update(engine, batch):
         model.train()
@@ -166,7 +173,7 @@ def supervised_evaluator(model, device="cpu"):
 
     return engine
 
-trainer = supervised_train(model, optim=hyperVar['optimizer'], device=device, rate = hyperVar["lr"])
+trainer = supervised_train(model, device=device)
 
 X_parms, Y_parms = testSet.unscale()
 evaluator = supervised_evaluator(model, device=device)

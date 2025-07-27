@@ -1,3 +1,4 @@
+# %% Importing libraries
 import torch
 import time  # Add time module for performance measurement
 
@@ -6,6 +7,7 @@ import h5py
 import numpy as np
 from tqdm import trange
 
+# %% Parameters
 add_signals = False
 testing = False
 # Stft parameters
@@ -13,6 +15,11 @@ fs = 10000
 total_cycles = 100
 overlap_perc = 0.85
 cycles_per_window = 5  # Number of cycles in one window
+
+B0 = 5e-12  # The magnetic field on the sensor [T]
+F_B = 15  # The magnetic field frequency [Hz]
+I0 = 50e-3  # The current amplitude in the sensor[A]
+noise_strength = 1e-10  # The noise strength [V]
 
 # Small for cpu, large for gpu
 batch_size = 16 if torch.cuda.is_available() else 4
@@ -44,7 +51,8 @@ _, sig_f, sig_t = my_stft(50e-3, 4e-12, 15, 0.5e-10,
                                 only_center=True,
                                 device=device)
 
-# Performance tracking variables
+# %% **************TRAINING*************** # 
+
 total_start_time = time.time()
 stft_timings = {'train': [], 'validate': [], 'test': []}
 data_creation_times = {'train': 0, 'validate': 0, 'test': 0}
@@ -64,11 +72,6 @@ for batch_idx in trange(0, n_trains, batch_size, desc="Creating training data ba
     # Calculate actual batch size (may be smaller for last batch)
     current_batch_size = min(batch_size, n_trains - batch_idx)
     
-    # Base parameters
-    I0 = 50e-3  # The current amplitude in the sensor[A]
-    B0 = 4e-12  # The magnetic field on the sensor [T]
-    F_B = 15  # The magnetic field frequency [Hz]
-    noise_strength = 0.5e-10
     
     # Create randomized parameters in batch
     rand_start = time.time()
@@ -142,7 +145,7 @@ print(f"Average clean STFT generation time: {avg_times['clean_stft_time']:.4f} s
 print(f"Average noisy STFT generation time: {avg_times['noisy_stft_time']:.4f} seconds")
 print("")
 
-#  CREATING VALIDATION NOISE + SIGNAL  #
+# %% **************VALIDATION*************** #
 
 n = n_validate
 clear_stft = torch.empty(n, stft_size[1], stft_size[2], device=device)  # Shape: (n_trains, n_freqs, n_time_bins)
@@ -155,11 +158,6 @@ for batch_idx in trange(0, n_validate, batch_size, desc="Creating validation dat
     # Calculate actual batch size (may be smaller for last batch)
     current_batch_size = min(batch_size, n_validate - batch_idx)
     
-    # Base parameters
-    I0 = 50e-3  # The current amplitude in the sensor[A]
-    B0 = 4e-12  # The magnetic field on the sensor [T]
-    F_B = 15  # The magnetic field frequency [Hz]
-    noise_strength = 0.5e-10
     
     # Create randomized parameters in batch
     rand_start = time.time()
@@ -213,7 +211,7 @@ print(f"f_signals: {validate_f_signals.shape}")
 print(f"F_B: {validate_F_B.shape}")
 print(f"B0: {validate_B0.shape}")
 
-#   CREATING TEST NOISE AND SIGNAL    #
+# %% # **************TESTING*************** #
 n = n_tests
 clear_stft = torch.empty(n, stft_size[1], stft_size[2], device=device)  # Shape: (n_trains, n_freqs, n_time_bins)
 noisy_stft = torch.empty(n, stft_size[1], stft_size[2], device=device)
@@ -225,11 +223,6 @@ for batch_idx in trange(0, n_tests, batch_size, desc="Creating testing data batc
     # Calculate actual batch size (may be smaller for last batch)
     current_batch_size = min(batch_size, n_tests - batch_idx)
     
-    # Base parameters
-    I0 = 50e-3  # The current amplitude in the sensor[A]
-    B0 = 4e-12  # The magnetic field on the sensor [T]
-    F_B = 15  # The magnetic field frequency [Hz]
-    noise_strength = 0.5e-10
     
     # Create randomized parameters in batch
     rand_start = time.time()
@@ -294,7 +287,7 @@ print(f"F_B: {test_F_B.shape}")
 print(f"B0: {test_B0.shape}")
 
 
-#   CREATING ONLY NOISE WITH SPECS OF TESTING #
+# %% Noise for testing
 '''
 clear_sig = []
 clear_sig_f = []
@@ -319,7 +312,7 @@ noise_for_test = {
 }
 '''
 
-# Writing the data to HDF5 file with chunking:
+# %% File saving
 with h5py.File("Data/data_stft.h5", "w") as f:
     # Determine optimal chunk sizes based on data dimensions and typical access patterns
     # For STFT data: chunk by whole samples to maintain data locality

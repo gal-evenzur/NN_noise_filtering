@@ -121,11 +121,11 @@ def make_noise(Time, n_power, p_perc, device='cpu'):
 
 def rand_train(I0, B0, F_B, noise_strength, device='cpu', batch_size=1):
     # Create random multipliers as tensors directly on the specified device
-    I0_mult = torch.rand(batch_size, device=device) * 4.9 + 0.1  # uniform between 0.1 and 5
-    B0_mult = torch.rand(batch_size, device=device) * 19 + 1     # uniform between 1 and 20
+    I0_mult = torch.rand(batch_size, device=device) * 2 + 0.5  # uniform between 0.5 and 2.5
+    B0_mult = torch.rand(batch_size, device=device) * 6 + 1     # uniform between 1 and 7
     F_B_offsets = torch.randint(F_B - 5, F_B + 21, (batch_size,), device=device)  # inclusive lower, exclusive upper bound
-    noise_mult = torch.rand(batch_size, device=device) * 0.9 + 0.5  # uniform between 0.5 and 1.4
-    
+    noise_mult = torch.rand(batch_size, device=device) * 5  # uniform between 0 and 5
+
     # Apply the multipliers
     I0_r = I0 * I0_mult
     B0_r = B0 * B0_mult
@@ -139,7 +139,7 @@ def rand_train(I0, B0, F_B, noise_strength, device='cpu', batch_size=1):
 def rand_test(I0, B0, F_B, noise_strength, device='cpu', batch_size=1):
     # Create random values as tensors directly on the specified device
     I0_noise = torch.normal(0, var(0.1*I0), size=(batch_size,), device=device)
-    B0_mult = torch.rand(batch_size, device=device) * 2.75 + 0.25  # uniform between 0.25 and 3
+    B0_mult = torch.rand(batch_size, device=device) * 4 + 1  # uniform between 1 and 5
     F_B_offsets = torch.randint(F_B - 5, F_B + 6, (batch_size,), device=device)  # inclusive lower, exclusive upper bound
     
     # Apply the values
