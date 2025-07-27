@@ -55,6 +55,7 @@ n = n_trains
 clear_stft = torch.empty(n, stft_size[1], stft_size[2], device=device)  # Shape: (n_trains, n_freqs, n_time_bins)
 noisy_stft = torch.empty(n, stft_size[1], stft_size[2], device=device)
 Corresponding_F_B = []
+Corresponding_B0 = []
 
 # printing the size of the clear_stft and noisy_stft tensors
 print("Size of clear_stft:", clear_stft.shape)
@@ -114,12 +115,14 @@ for batch_idx in trange(0, n_trains, batch_size, desc="Creating training data ba
     clear_stft[batch_idx:batch_idx+current_batch_size] = clean_magnitude
     noisy_stft[batch_idx:batch_idx+current_batch_size] = magnitude
     Corresponding_F_B.extend(F_B_r.tolist())
+    Corresponding_B0.extend(B0_r.tolist())
 
 
 # Store data directly as numpy arrays for better efficiency
 train_f_cSignal = clear_stft.cpu().numpy()  # Direct numpy conversion
 train_f_signals = noisy_stft.cpu().numpy()
 train_F_B = np.array(Corresponding_F_B)
+train_B0 = np.array(Corresponding_B0)
 
 data_creation_times['train'] = time.time() - train_start_time
 
@@ -127,6 +130,7 @@ print("Training data created. sizes:")
 print(f"f_cSignal: {train_f_cSignal.shape}")
 print(f"f_signals: {train_f_signals.shape}")
 print(f"F_B: {train_F_B.shape}")
+print(f"B0: {train_B0.shape}")
 
 # Print time statistics for training data
 print("\nTraining data creation time statistics:")
@@ -144,6 +148,7 @@ n = n_validate
 clear_stft = torch.empty(n, stft_size[1], stft_size[2], device=device)  # Shape: (n_trains, n_freqs, n_time_bins)
 noisy_stft = torch.empty(n, stft_size[1], stft_size[2], device=device)
 Corresponding_F_B = []
+Corresponding_B0 = []
 
 validate_start_time = time.time()
 for batch_idx in trange(0, n_validate, batch_size, desc="Creating validation data batches"):
@@ -192,11 +197,13 @@ for batch_idx in trange(0, n_validate, batch_size, desc="Creating validation dat
     clear_stft[batch_idx:batch_idx+current_batch_size] = clean_magnitude
     noisy_stft[batch_idx:batch_idx+current_batch_size] = magnitude
     Corresponding_F_B.extend(F_B_r.tolist())
+    Corresponding_B0.extend(B0_r.tolist())
 
 # Store data directly as numpy arrays for better efficiency
 validate_f_cSignal = clear_stft.cpu().numpy()
 validate_f_signals = noisy_stft.cpu().numpy()
 validate_F_B = np.array(Corresponding_F_B)
+validate_B0 = np.array(Corresponding_B0)
 
 data_creation_times['validate'] = time.time() - validate_start_time
 
@@ -204,13 +211,14 @@ print("Validation data created. sizes:")
 print(f"f_cSignal: {validate_f_cSignal.shape}")
 print(f"f_signals: {validate_f_signals.shape}")
 print(f"F_B: {validate_F_B.shape}")
-print("")
+print(f"B0: {validate_B0.shape}")
 
 #   CREATING TEST NOISE AND SIGNAL    #
 n = n_tests
 clear_stft = torch.empty(n, stft_size[1], stft_size[2], device=device)  # Shape: (n_trains, n_freqs, n_time_bins)
 noisy_stft = torch.empty(n, stft_size[1], stft_size[2], device=device)
 Corresponding_F_B = []
+Corresponding_B0 = []
 
 test_start_time = time.time()
 for batch_idx in trange(0, n_tests, batch_size, desc="Creating testing data batches"):
@@ -268,12 +276,14 @@ for batch_idx in trange(0, n_tests, batch_size, desc="Creating testing data batc
     clear_stft[batch_idx:batch_idx+current_batch_size] = clean_magnitude
     noisy_stft[batch_idx:batch_idx+current_batch_size] = magnitude
     Corresponding_F_B.extend(F_B_r.tolist())
+    Corresponding_B0.extend(B0_r.tolist())
 
 
 # Store data directly as numpy arrays for better efficiency
 test_f_cSignal = clear_stft.cpu().numpy()
 test_f_signals = noisy_stft.cpu().numpy()
 test_F_B = np.array(Corresponding_F_B)
+test_B0 = np.array(Corresponding_B0)
 
 data_creation_times['test'] = time.time() - test_start_time
 
@@ -281,6 +291,7 @@ print("Test data created. sizes:")
 print(f"f_cSignal: {test_f_cSignal.shape}")
 print(f"f_signals: {test_f_signals.shape}")
 print(f"F_B: {test_F_B.shape}")
+print(f"B0: {test_B0.shape}")
 
 
 #   CREATING ONLY NOISE WITH SPECS OF TESTING #
@@ -330,7 +341,10 @@ with h5py.File("Data/data_stft.h5", "w") as f:
     train_group.create_dataset("F_B", data=train_F_B, 
                               chunks=train_fb_chunks,
                               compression=None)
-    
+    train_group.create_dataset("B0", data=train_B0, 
+                              chunks=train_fb_chunks,
+                              compression=None)
+
     # Validation data chunking
     validate_samples = validate_f_cSignal.shape[0]
     validate_chunk_size = min(16, validate_samples)
@@ -347,7 +361,10 @@ with h5py.File("Data/data_stft.h5", "w") as f:
     validate_group.create_dataset("F_B", data=validate_F_B, 
                                  chunks=validate_fb_chunks,
                                  compression=None)
-    
+    validate_group.create_dataset("B0", data=validate_B0, 
+                                 chunks=validate_fb_chunks,
+                                 compression=None)
+
     # Test data chunking
     test_samples = test_f_cSignal.shape[0]
     test_chunk_size = min(16, test_samples)
@@ -364,7 +381,10 @@ with h5py.File("Data/data_stft.h5", "w") as f:
     test_group.create_dataset("F_B", data=test_F_B, 
                              chunks=test_fb_chunks,
                              compression=None)
-    
+    test_group.create_dataset("B0", data=test_B0, 
+                             chunks=test_fb_chunks,
+                             compression=None)
+
     # Time and frequency axes (no chunking needed for small 1D arrays)
     f.create_dataset("t", data=sig_t.cpu().numpy(), compression=None)
     f.create_dataset("f", data=sig_f.cpu().numpy(), compression=None)
@@ -373,7 +393,7 @@ with h5py.File("Data/data_stft.h5", "w") as f:
     print(f"Training STFT chunks: {train_stft_chunks}")
     print(f"Validation STFT chunks: {validate_stft_chunks}")
     print(f"Test STFT chunks: {test_stft_chunks}")
-    print(f"F_B chunks: {train_fb_chunks[0]} samples")
+    print(f"F_B/B0 chunks: {train_fb_chunks[0]} samples")
 
 total_execution_time = time.time() - total_start_time
 print("\nOverall Performance Statistics:")

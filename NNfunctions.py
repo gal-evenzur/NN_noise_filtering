@@ -25,14 +25,14 @@ def scale_tensor(dat_raw, log=False, norm=False, minmax=False, tensor=False, res
         mean = lib.mean(dat_raw)
         std = lib.std(dat_raw)
         dat_raw = (dat_raw - mean)/std
-        sc_par['norm'] = [mean, std]
+        sc_par['norm'] = (mean, std)
 
 
     if minmax:
         min = lib.min(dat_raw)
         max = lib.max(dat_raw)
         dat_raw = (dat_raw - min)/(max - min)
-        sc_par['minmax'] = [min, max]
+        sc_par['minmax'] = (min, max)
 
     if resnet:
         #ResNet expects input in shape (batch_size, 1, n_length)
@@ -41,10 +41,31 @@ def scale_tensor(dat_raw, log=False, norm=False, minmax=False, tensor=False, res
         sc_par['resnet'] = True
 
 
-
-
-
     return dat_raw, sc_par
+
+def scale_like_tensor(dat_raw, params):
+    '''
+    This function applies the same scaling parameters as in scale_tensor.
+    '''
+
+    if not isinstance(dat_raw, torch.Tensor):
+        dat_raw = torch.tensor(dat_raw, dtype=torch.float64)
+
+    if params.get('log'):
+        dat_raw = torch.log10(dat_raw)
+
+    if params.get('norm'):
+        mean, std = params.get('norm')
+        dat_raw = (dat_raw - mean) / std
+
+    if params.get('minmax'):
+        min_val, max_val = params.get('minmax')
+        dat_raw = (dat_raw - min_val) / (max_val - min_val)
+
+    if params.get('resnet'):
+        dat_raw = dat_raw.unsqueeze(1)
+
+    return dat_raw
 
 def unscale_tensor(procss_data, params):
     if params.get('minmax'):
@@ -68,8 +89,8 @@ def unscale_tensor(procss_data, params):
 
 
 class SignalDataset(Dataset):
-    def __init__(self, data_path, split="train", transfrom=scale_tensor, resnet=False):
-        
+    def __init__(self, data_path, split="train", 
+                 transfrom=scale_tensor, resnet=False, same_scale=False):
         # Determine file type based on extension
         if data_path.endswith('.h5') or data_path.endswith('.hdf5'):
             # Load HDF5 data
@@ -77,6 +98,7 @@ class SignalDataset(Dataset):
                 sig_raw = h5_file[f'{split}/f_signals'][:]
                 clean_raw = h5_file[f'{split}/f_cSignal'][:]
                 self.F_B = h5_file[f'{split}/F_B'][:]
+                self.B0 = h5_file[f'{split}/B0'][:] 
                 self.f = torch.tensor(h5_file['f'][:], dtype=torch.float64)
                 self.time = torch.tensor(h5_file['t'][:], dtype=torch.float64) if 't' in h5_file else None
             
@@ -101,10 +123,14 @@ class SignalDataset(Dataset):
             self.F_B = torch.tensor(self.F_B, dtype=torch.int32).unsqueeze(1)
 
         amps = peak_heights(clean_raw, self.f, f_b=self.F_B, f_center=2000, dir=False)
+        self.same_scale = same_scale
 
         self.X, self.X_scale = transfrom(sig_raw, log=True, norm=True, tensor=True, resnet=resnet)
-        self.Y, self.Y_scale = transfrom(amps, log=True, tensor=True)
-
+        if self.same_scale:
+            self.Y = scale_like_tensor(amps, self.X_scale)
+            self.Y_scale = self.X_scale
+        else:
+            self.Y, self.Y_scale = transfrom(amps, log=True, tensor=True)
 
     def __len__(self):
         return len(self.X)
@@ -126,6 +152,9 @@ class SignalDataset(Dataset):
 
     def get_clean_sig(self, idx):
         return self.clean[idx]
+    
+    def get_B0(self, idx):
+        return self.B0[idx] if hasattr(self, 'B0') else None
     
     
 
