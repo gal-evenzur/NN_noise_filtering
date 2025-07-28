@@ -4,22 +4,22 @@ import time
 
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
-from torch.optim import SGD, Adam
+from torch.utils.data import DataLoader
+from torch.optim import Adam
 from torchvision import models
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from ignite.engine import Engine, Events
-from ignite.handlers import EarlyStopping
+from ignite.handlers import EarlyStopping, ModelCheckpoint
 from ignite.contrib.handlers import ProgressBar
 from ignite.metrics import Loss
 
 import matplotlib
-
-
 matplotlib.use('TkAgg')  # or 'Agg' for testing headless
 import matplotlib.pyplot as plt
 import numpy as np
+
+
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -27,18 +27,20 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # %%% PARAMS # 
 hyperVar = {
     # Data parameters
-    'batch_size': 8,
+    'batch_size': 16,
     'device': device,
 
     # Optimiser parameters
     'optimizer': Adam,
-    'lr': 1e-4,
-    'weight_decay': 1e-5,
-    'amsgrad': False, 
+    'lr': 1e-5,
+    'weight_decay': 1e-3,
+    'beta1': 0.9, # ++ smoother training but slower response to changes
+    'beta2': 0.999, # -- faster adaptation of learning rates but potentially less stability
+    'amsgrad': True, 
 
     # Training procedure parameters
-    'n_epochs': 4,
-    'patience': 2,
+    'n_epochs': 10,
+    'patience': 3,
 
     # Plotting parameters
     'n_plotted': 10,
@@ -117,6 +119,7 @@ class EfficientNetB0(nn.Module):
         """
         return self.net(x)
 
+# %% DELETING OLD PARAMETERS !!! 
 model = EfficientNetB0(n_classes=3, pretrained=True, freeze_pretrained=False)
 model = model.double()  # Convert model to float64
 
@@ -126,12 +129,13 @@ losses = []
 val_losses = []
 eps = []
 
-criterion = nn.L1Loss()  # Mean Absolute Error (MAE)
+criterion = nn.SmoothL1Loss()  # Mean Absolute Error (MAE)
 optimizer = hyperVar['optimizer'](
     model.parameters(), 
     lr=hyperVar['lr'], 
     weight_decay=hyperVar['weight_decay'],
-    amsgrad=hyperVar['amsgrad']
+    amsgrad=hyperVar['amsgrad'],
+    betas=(hyperVar['beta1'], hyperVar['beta2'])
 )
 
 def supervised_train(model, device="cpu"):
@@ -185,6 +189,29 @@ handler = EarlyStopping(
 )
 evaluator.add_event_handler(Events.COMPLETED, handler)
 
+# Setup Model Checkpoint handler to save the best model
+import os
+checkpoint_dir = "./checkpoints"
+os.makedirs(checkpoint_dir, exist_ok=True)
+
+checkpoint_handler = ModelCheckpoint(
+    checkpoint_dir,
+    filename_prefix="best_model",
+    require_empty=False,
+    score_function=score_function,  # Using the same score_function as early stopping
+    score_name="val_loss",
+    n_saved=1,  # Only save the best model
+    global_step_transform=lambda engine, _: engine.state.epoch
+)
+evaluator.add_event_handler(Events.COMPLETED, checkpoint_handler, {'model': model})
+
+# Dictionary to store the best model parameters and corresponding score
+best_model_info = {
+    'params': None,
+    'score': float('-inf'),  # Initialize with worst possible score (we want to maximize -loss)
+    'epoch': 0
+}
+
 @trainer.on(Events.EPOCH_COMPLETED)
 def run_validation_loss_track(engine):
     # Track losses for plotting
@@ -193,16 +220,50 @@ def run_validation_loss_track(engine):
 
     # Run validation
     evaluator.run(validate_loader)
-    val_losses.append(evaluator.state.metrics['loss'])
+    val_loss = evaluator.state.metrics['loss']
+    val_losses.append(val_loss)
+    
+    # Check if this is the best model so far
+    current_score = -val_loss  # Negative because we want to maximize score (minimize loss)
+    if current_score > best_model_info['score']:
+        best_model_info['score'] = current_score
+        best_model_info['params'] = {k: v.clone().detach() for k, v in model.state_dict().items()}
+        best_model_info['epoch'] = trainer.state.epoch
+        print(f"New best model found at epoch {trainer.state.epoch}!")
+    
     print(f"Epoch {trainer.state.epoch} - Training Loss: {trainer.state.output:.4f}, "
-          f"Validation Loss: {evaluator.state.metrics['loss']:.4f}")
+          f"Validation Loss: {val_loss:.4f}, Best Epoch: {best_model_info['epoch']}")
 
 
 ProgressBar().attach(trainer, output_transform=lambda x: {'loss': x})
 
 # %% ********TRAINING*********
 print("Starting training...")
+# Ask user if they want to resume training from a checkpoint
+resume = input("Do you want to resume training from a checkpoint? (y/n): ")
+if resume.lower() == 'y':
+    checkpoint_dir = "./checkpoints"
+    files = os.listdir(checkpoint_dir)
+
+    if files:
+        checkpoint_path = os.path.join(checkpoint_dir, files[0])
+        print(f"Loading checkpoint: {checkpoint_path}")
+        checkpoint = torch.load(checkpoint_path)
+        model.load_state_dict(checkpoint)
+        print(f"Resuming training...")
+    else:
+        print("No checkpoint files found.")
+else:
+    print("Starting training from scratch...")
+    
 trainer.run(dataloader, max_epochs=hyperVar['n_epochs'])
+
+# Restore the best model
+if best_model_info['params'] is not None:
+    print(f"Restoring best model from epoch {best_model_info['epoch']} with validation loss: {-best_model_info['score']:.4f}")
+    model.load_state_dict(best_model_info['params'])
+else:
+    print("Warning: No best model was found during training!")
 
 
 # %%   ------Evaluation of the model------

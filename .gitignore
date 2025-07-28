@@ -1,7 +1,9 @@
 /Simulation/model_creating_data/data.json
 *.idea
 **/data.json
+*.pt
 *.json
 *.h5
 **/__pycache__
 /ppt/
+/checkpoints
