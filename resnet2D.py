@@ -6,6 +6,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import Adam
+from torch.utils.data import DataLoader
+from torch.optim import Adam
 from torchvision import models
 
 
@@ -18,8 +20,6 @@ import matplotlib
 matplotlib.use('TkAgg')  # or 'Agg' for testing headless
 import matplotlib.pyplot as plt
 import numpy as np
-
-
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -110,18 +110,14 @@ class EfficientNet(nn.Module):
             padding=original_conv.padding,
             bias=False
         )
-        # if pretrained:
-        #     self.net.features[0][0].weight.data = original_conv.weight.data.sum(dim=1, keepdim=True)
+        if pretrained:
+            with torch.no_grad():
+                w = original_conv.weight.data
+                self.net.features[0][0].weight.copy_(w.mean(dim=1, keepdim=True))
 
         # --- Adapt the final layer for regression ---
         num_ftrs = self.net.classifier[1].in_features
-        self.net.classifier = nn.Sequential(
-            nn.Dropout(p=0.3),           # Optional dropout
-            nn.Linear(num_ftrs, 128),    # First FC layer
-            nn.ReLU(),                   # Activation
-            nn.Dropout(p=0.2),           # Another dropout
-            nn.Linear(128, n_classes)    # Output FC layer (regression)
-        )
+        self.net.classifier[1] = nn.Linear(num_ftrs, n_classes)
 
         # --- Unfreeze the new layers so they can be trained ---
         if pretrained and freeze_pretrained:
@@ -150,7 +146,7 @@ losses = []
 val_losses = []
 eps = []
 
-criterion = nn.L1Loss()  # Mean Absolute Error (MAE)
+criterion = nn.SmoothL1Loss()  # Mean Absolute Error (MAE)
 optimizer = hyperVar['optimizer'](
     model.parameters(), 
     lr=hyperVar['lr'], 
@@ -330,9 +326,15 @@ else:
     print(f"Checkpoint directory {checkpoint_dir} does not exist.")
     
 # %% ********TRAINING*********
-
-
+print("--TRAINING---")
 trainer.run(dataloader, max_epochs=hyperVar['n_epochs'])
+
+# Restore the best model
+if best_model_info['params'] is not None:
+    print(f"Restoring best model from epoch {best_model_info['epoch']} with validation loss: {-best_model_info['score']:.4f}")
+    model.load_state_dict(best_model_info['params'])
+else:
+    print("Warning: No best model was found during training!")
 
 # Restore the best model
 if best_model_info['params'] is not None:
