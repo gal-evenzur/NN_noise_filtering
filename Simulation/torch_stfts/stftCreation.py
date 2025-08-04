@@ -32,7 +32,7 @@ if testing:
     n_validate = 10
     n_tests = 10
 else:
-    n_trains = 64 * 20  # = 1280
+    n_trains = 64 * 1  # = 1920
     n_validate = 64 * 3  # = 192
     n_tests = 64 * 3
 
@@ -313,7 +313,8 @@ noise_for_test = {
 '''
 
 # %% File saving
-with h5py.File("Data/data_stft.h5", "w") as f:
+path = "C:\\Users\\galev\\Documents\\Research\\Data\\data_stft.h5"
+with h5py.File(path, "w") as f:
     # Determine optimal chunk sizes based on data dimensions and typical access patterns
     # For STFT data: chunk by whole samples to maintain data locality
     # Typical chunk size: 8-32 samples at a time for efficient I/O
@@ -393,3 +394,5 @@ print("\nOverall Performance Statistics:")
 print(f"Total script execution time: {total_execution_time:.2f} seconds")
 print(f"Data creation times: Train={data_creation_times['train']:.2f}s, Validate={data_creation_times['validate']:.2f}s, Test={data_creation_times['test']:.2f}s")
 print(f"Percentage of time spent: Train={100*data_creation_times['train']/total_execution_time:.1f}%, Validate={100*data_creation_times['validate']/total_execution_time:.1f}%, Test={100*data_creation_times['test']/total_execution_time:.1f}%")
+
+# %%

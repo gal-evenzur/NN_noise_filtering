@@ -289,6 +289,67 @@ class MDEPerIntensity(Metric):
         return intensities, preds, diffs
 
 
+class R2Score(Metric):
+    """
+    Calculates the R² (coefficient of determination) of the linear fit between predicted and true values.
+        
+    Args:
+        multioutput (str, optional): Defines aggregation in the case of multiple output values.
+            Can be 'uniform_average', 'raw_values', or 'variance_weighted'. 
+            Default is 'uniform_average'.
+    """
+    def __init__(self, output_transform=lambda x: x, device="cpu", multioutput='raw_values'):
+        super(R2Score, self).__init__(output_transform=output_transform, device=device)
+        self.multioutput = multioutput
+        
+    def reset(self):
+        self._y_true = []
+        self._y_pred = []
+        
+    def update(self, output):        
+        y_pred, y_true = output[0].detach(), output[1].detach()
+        
+        self._y_true.append(y_true)
+        self._y_pred.append(y_pred)
+        
+    def compute(self):
+        """
+        Computes the R² score between the predicted and true values.
+        
+        Returns:
+            torch.Tensor: The R² score. If multioutput is 'raw_values', returns
+                         a tensor with R² scores for each output dimension.
+        """
+        y_true = torch.cat(self._y_true, dim=0)
+        y_pred = torch.cat(self._y_pred, dim=0)
+        
+        # Calculate R²
+        y_true_mean = torch.mean(y_true, dim=0)
+        
+        # Total sum of squares
+        ss_tot = torch.sum((y_true - y_true_mean) ** 2, dim=0)
+        
+        # Residual sum of squares
+        ss_res = torch.sum((y_true - y_pred) ** 2, dim=0)
+        
+        r2 = 1 - (ss_res / ss_tot)
+        
+        # Handle multioutput
+        if self.multioutput == 'raw_values':
+            return r2
+        elif self.multioutput == 'uniform_average':
+            return torch.mean(r2)
+        elif self.multioutput == 'variance_weighted':
+            weights = ss_tot / torch.sum(ss_tot)
+            return torch.sum(r2 * weights)
+        else:
+            raise ValueError(f"Invalid multioutput option: {self.multioutput}")
+
+
 def score_function(engine):
     # Lower loss is better, so return negative loss
     return -engine.state.metrics['loss']
+
+def r2_score_function(engine):
+    # Higher R^2 is better, return R^2 directly
+    return engine.state.metrics['r2_score'][0]

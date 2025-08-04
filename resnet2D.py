@@ -30,17 +30,19 @@ hyperVar = {
     'batch_size': 16,
     'device': device,
 
+    'Bnumber': 1,  # 0 for B0, 1 for B1, 2 for B2
+
     # Optimiser parameters
     'optimizer': Adam,
-    'lr': 1e-5,
-    'weight_decay': 1e-3,
+    'lr': 1e-4,
+    'weight_decay': 1e-5,
     'beta1': 0.9, # ++ smoother training but slower response to changes
     'beta2': 0.999, # -- faster adaptation of learning rates but potentially less stability
     'amsgrad': True, 
 
     # Training procedure parameters
-    'n_epochs': 10,
-    'patience': 3,
+    'n_epochs': 20,
+    'patience': 4,
 
     # Plotting parameters
     'n_plotted': 10,
@@ -66,10 +68,10 @@ print(f"Dataset sizes: Train={len(trainSet)}, Validation={len(validateSet)}, Tes
 
 
 # %% Structure for the NN: #
-class EfficientNetB0(nn.Module):
+class EfficientNet(nn.Module):
     def __init__(self, n_classes=3, pretrained=True, freeze_pretrained=False):
         """
-        Initializes a EfficientNetB0 model adapted for single-channel input.
+        Initializes a EfficientNet model adapted for single-channel input.
         Args:
             n_classes (int): The number of output values to predict.
             pretrained (bool): Whether to use pre-trained weights from ImageNet.
@@ -77,8 +79,13 @@ class EfficientNetB0(nn.Module):
                                      input and output layers.
         """
         super().__init__()
-        # Load a pre-trained EfficientNetB0 model
-        self.net = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT if pretrained else None)
+        # Load a pre-trained EfficientNet model
+        if hyperVar['Bnumber'] == 0:
+            self.net = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT if pretrained else None)
+        elif hyperVar['Bnumber'] == 1:
+            self.net = models.efficientnet_b1(weights=models.EfficientNet_B1_Weights.DEFAULT if pretrained else None)
+        elif hyperVar['Bnumber'] == 2:
+            self.net = models.efficientnet_b2(weights=models.EfficientNet_B2_Weights.DEFAULT if pretrained else None)
 
         # --- Freeze pre-trained layers if requested ---
         if pretrained and freeze_pretrained:
@@ -120,7 +127,7 @@ class EfficientNetB0(nn.Module):
         return self.net(x)
 
 # %% DELETING OLD PARAMETERS !!! 
-model = EfficientNetB0(n_classes=3, pretrained=True, freeze_pretrained=False)
+model = EfficientNet(n_classes=3, pretrained=True, freeze_pretrained=False)
 model = model.double()  # Convert model to float64
 
 # %% ENGINE SETUP #
@@ -129,7 +136,7 @@ losses = []
 val_losses = []
 eps = []
 
-criterion = nn.SmoothL1Loss()  # Mean Absolute Error (MAE)
+criterion = nn.L1Loss()  # Mean Absolute Error (MAE)
 optimizer = hyperVar['optimizer'](
     model.parameters(), 
     lr=hyperVar['lr'], 
@@ -174,6 +181,11 @@ def supervised_evaluator(model, device="cpu"):
     Loss(criterion,
         output_transform=lambda x: (x[0], x[1])
     ).attach(engine, 'loss')
+
+    R2Score(output_transform=lambda x: (x[0], x[1]),
+        device=device,
+        multioutput='raw_values'
+    ).attach(engine, 'r2_score')
 
     return engine
 
@@ -222,6 +234,7 @@ def run_validation_loss_track(engine):
     evaluator.run(validate_loader)
     val_loss = evaluator.state.metrics['loss']
     val_losses.append(val_loss)
+    r2 = evaluator.state.metrics['r2_score'][0].item()  # Get the R^2 score for the first output
     
     # Check if this is the best model so far
     current_score = -val_loss  # Negative because we want to maximize score (minimize loss)
@@ -232,30 +245,51 @@ def run_validation_loss_track(engine):
         print(f"New best model found at epoch {trainer.state.epoch}!")
     
     print(f"Epoch {trainer.state.epoch} - Training Loss: {trainer.state.output:.4f}, "
-          f"Validation Loss: {val_loss:.4f}, Best Epoch: {best_model_info['epoch']}")
+          f"Validation Loss: {val_loss:.4f}, Best Epoch: {best_model_info['epoch']}\n"
+          f"R2: {r2:.4f}")
 
 
 ProgressBar().attach(trainer, output_transform=lambda x: {'loss': x})
+# %% CHECKPOINTS #
 
-# %% ********TRAINING*********
 print("Starting training...")
 # Ask user if they want to resume training from a checkpoint
-resume = input("Do you want to resume training from a checkpoint? (y/n): ")
-if resume.lower() == 'y':
-    checkpoint_dir = "./checkpoints"
-    files = os.listdir(checkpoint_dir)
-
-    if files:
-        checkpoint_path = os.path.join(checkpoint_dir, files[0])
-        print(f"Loading checkpoint: {checkpoint_path}")
-        checkpoint = torch.load(checkpoint_path)
-        model.load_state_dict(checkpoint)
-        print(f"Resuming training...")
-    else:
-        print("No checkpoint files found.")
-else:
-    print("Starting training from scratch...")
+checkpoint_dir = "./checkpoints"
+if os.path.exists(checkpoint_dir):
+    files = [f for f in os.listdir(checkpoint_dir) if f.endswith('.pt') or f.endswith('.pth')]
     
+    if files:
+        print("\nAvailable checkpoint files:")
+        for i, file in enumerate(files):
+            print(f"{i+1}. {file}")
+        
+        while True:
+            try:
+                choice = int(input("\nSelect checkpoint number (or 0 to cancel): "))
+                if choice == 0:
+                    print("Canceled. Starting training from scratch...")
+                    break
+                elif 1 <= choice <= len(files):
+                    checkpoint_path = os.path.join(checkpoint_dir, files[choice-1])
+                    print(f"Loading checkpoint: {checkpoint_path}")
+                    # Load the model state
+                    checkpoint = torch.load(checkpoint_path, map_location=device)
+                    model.load_state_dict(checkpoint)
+                      
+                    print(f"Resuming training...")
+                    break
+                else:
+                    print(f"Invalid choice. Please select a number between 0 and {len(files)}.")
+            except ValueError:
+                print("Please enter a valid number.")
+    else:
+        print("No checkpoint files found in the directory.")
+else:
+    print(f"Checkpoint directory {checkpoint_dir} does not exist.")
+    
+# %% ********TRAINING*********
+
+
 trainer.run(dataloader, max_epochs=hyperVar['n_epochs'])
 
 # Restore the best model
@@ -266,7 +300,7 @@ else:
     print("Warning: No best model was found during training!")
 
 
-# %%   ------Evaluation of the model------
+ # %%   ------Evaluation of the model------
 set = testSet
 f = set.get_freqs()
 
@@ -430,4 +464,4 @@ for i, (ax, name) in enumerate(zip(axes, peak_names)):
 
 plt.tight_layout(rect=[0, 0, 1, 0.96])
 plt.show()
-# %%
+
