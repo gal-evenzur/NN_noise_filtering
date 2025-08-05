@@ -124,7 +124,7 @@ def rand_train(I0, B0, F_B, noise_strength, device='cpu', batch_size=1):
     I0_mult = torch.rand(batch_size, device=device) * 2 + 0.5  # uniform between 0.5 and 2.5
     B0_mult = torch.rand(batch_size, device=device) * 6 + 1     # uniform between 1 and 7
     F_B_offsets = torch.randint(F_B - 5, F_B + 21, (batch_size,), device=device)  # inclusive lower, exclusive upper bound
-    noise_mult = torch.rand(batch_size, device=device) * 5  # uniform between 0 and 5
+    noise_mult = torch.rand(batch_size, device=device) * 1.5 + 0.2  # uniform between 0.2 and 1.7
 
     # Apply the multipliers
     I0_r = I0 * I0_mult
@@ -132,6 +132,8 @@ def rand_train(I0, B0, F_B, noise_strength, device='cpu', batch_size=1):
     F_B_r = F_B_offsets
     noise_strength_r = noise_strength * noise_mult
     pink_percentage = torch.zeros(batch_size, device=device)
+    pink_percentage = torch.rand(batch_size, device=device) * 0.5  # uniform between 0 and 0.5
+
     
     return I0_r, B0_r, F_B_r, noise_strength_r, pink_percentage
 
@@ -387,7 +389,7 @@ def peak_heights_numpy(clear_signal, f_b, f_center, dir=False):
     return clear_signal[freqs]
 
 
-def peak_heights(clear_signal, freqs, f_b, f_center, dir=False):
+def peak_heights(clear_signal, freqs, f_b, f_center, dir=False, no_middle=False):
     # Receives a Tensor, and returns the height of each of the peaks in the signal
     # Needs to receive the clean signals in a dataset form (n_samps x L)
 
@@ -418,11 +420,15 @@ def peak_heights(clear_signal, freqs, f_b, f_center, dir=False):
     # Create row indices for advanced indexing
     row_indices = torch.arange(n_samp, device=clear_signal.device).unsqueeze(1).expand(-1, 3)
 
+    if no_middle:         # if no_middle is True, we skip the middle frequency
+        indices = indices[:, [0, 2]]
+        row_indices = row_indices[:, [0, 2]]
     # Use advanced indexing to extract the peak values
     if clear_signal.dim() == 3:  # STFT case: (n_samples, freq_bins, time_bins)
         result = clear_signal[row_indices, indices, 0]
     else:  # FFT case: (n_samples, freq_bins)
         # For FFT, we directly index into the 2D tensor
+
         result = torch.stack([clear_signal[i, indices[i]] for i in range(n_samp)])
 
 
@@ -430,7 +436,7 @@ def peak_heights(clear_signal, freqs, f_b, f_center, dir=False):
         peaks = {
             'left': result[:, 0],
             'center': result[:, 1],
-            'right': result[:, 2],
+            'right': result[:, -1],
         }
         return peaks
     else:

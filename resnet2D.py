@@ -9,10 +9,12 @@ from torch.optim import Adam
 from torchvision import models
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
+
 from ignite.engine import Engine, Events
 from ignite.handlers import EarlyStopping, ModelCheckpoint
 from ignite.contrib.handlers import ProgressBar
 from ignite.metrics import Loss
+from ignite.metrics.regression import R2Score
 
 import matplotlib
 matplotlib.use('TkAgg')  # or 'Agg' for testing headless
@@ -30,12 +32,14 @@ hyperVar = {
     'batch_size': 16,
     'device': device,
 
+    # Model parameters
+    'n_outputs': 2,
     'Bnumber': 1,  # 0 for B0, 1 for B1, 2 for B2
 
     # Optimiser parameters
     'optimizer': Adam,
-    'lr': 1e-4,
-    'weight_decay': 1e-5,
+    'lr': 5e-5,
+    'weight_decay': 4e-5,
     'beta1': 0.9, # ++ smoother training but slower response to changes
     'beta2': 0.999, # -- faster adaptation of learning rates but potentially less stability
     'amsgrad': True, 
@@ -54,9 +58,9 @@ hyperVar = {
 # %% &&&&&& IMPORTING DATA &&&&&&
 start_time = time.time()
 
-trainSet = SignalDataset('Data/data_stft.h5', split="train", resnet=True)
-validateSet = SignalDataset('Data/data_stft.h5', split="validate", resnet=True)
-testSet = SignalDataset('Data/data_stft.h5', split="test", resnet=True)
+trainSet = SignalDataset('Data/data_stft.h5', split="train", resnet=True, same_scale=False, no_middle=True)
+validateSet = SignalDataset('Data/data_stft.h5', split="validate", resnet=True, same_scale=False, no_middle=True)
+testSet = SignalDataset('Data/data_stft.h5', split="test", resnet=True, same_scale=False, no_middle=True)
 
 dataloader = DataLoader(trainSet, batch_size=hyperVar["batch_size"], shuffle=True)
 validate_loader = DataLoader(validateSet, batch_size=hyperVar["batch_size"], shuffle=False)
@@ -127,7 +131,7 @@ class EfficientNet(nn.Module):
         return self.net(x)
 
 # %% DELETING OLD PARAMETERS !!! 
-model = EfficientNet(n_classes=3, pretrained=True, freeze_pretrained=False)
+model = EfficientNet(n_classes=hyperVar['n_outputs'], pretrained=True, freeze_pretrained=False)
 model = model.double()  # Convert model to float64
 
 # %% ENGINE SETUP #
@@ -136,7 +140,7 @@ losses = []
 val_losses = []
 eps = []
 
-criterion = nn.L1Loss()  # Mean Absolute Error (MAE)
+criterion = nn.MSELoss()  # Mean Absolute Error (MAE)
 optimizer = hyperVar['optimizer'](
     model.parameters(), 
     lr=hyperVar['lr'], 
@@ -172,6 +176,24 @@ def supervised_evaluator(model, device="cpu"):
             X_batch, Y_batch = batch
             X, Y = X_batch.to(device), Y_batch.to(device)
             Y_pred = model(X)
+            
+            # Filter out abnormally large predictions
+            # Create a mask for valid predictions (not abnormally large)
+            # Calculate magnitude of predictions
+            pred_magnitude = torch.norm(Y_pred, dim=1)
+            
+            # Define threshold for abnormal predictions (adjust as needed)
+            # Using mean + 3*std as a statistical outlier threshold
+            threshold = pred_magnitude.mean() + 3 * pred_magnitude.std()
+            
+            # Create mask for normal predictions
+            valid_mask = pred_magnitude < threshold
+            # Apply mask to predictions and ground truth
+            # Filter predictions and ground truth
+            if not torch.all(valid_mask):
+                print(f"Filtered out {(~valid_mask).sum().item()} abnormal predictions")
+                Y_pred = Y_pred[valid_mask]
+                Y = Y[valid_mask]
 
             return Y_pred, Y
 
@@ -182,16 +204,10 @@ def supervised_evaluator(model, device="cpu"):
         output_transform=lambda x: (x[0], x[1])
     ).attach(engine, 'loss')
 
-    R2Score(output_transform=lambda x: (x[0], x[1]),
-        device=device,
-        multioutput='raw_values'
-    ).attach(engine, 'r2_score')
-
     return engine
 
 trainer = supervised_train(model, device=device)
 
-X_parms, Y_parms = testSet.unscale()
 evaluator = supervised_evaluator(model, device=device)
 
 handler = EarlyStopping(
@@ -223,6 +239,8 @@ best_model_info = {
     'score': float('-inf'),  # Initialize with worst possible score (we want to maximize -loss)
     'epoch': 0
 }
+# Attach R2Score metric
+
 
 @trainer.on(Events.EPOCH_COMPLETED)
 def run_validation_loss_track(engine):
@@ -234,8 +252,8 @@ def run_validation_loss_track(engine):
     evaluator.run(validate_loader)
     val_loss = evaluator.state.metrics['loss']
     val_losses.append(val_loss)
-    r2 = evaluator.state.metrics['r2_score'][0].item()  # Get the R^2 score for the first output
     
+
     # Check if this is the best model so far
     current_score = -val_loss  # Negative because we want to maximize score (minimize loss)
     if current_score > best_model_info['score']:
@@ -245,8 +263,7 @@ def run_validation_loss_track(engine):
         print(f"New best model found at epoch {trainer.state.epoch}!")
     
     print(f"Epoch {trainer.state.epoch} - Training Loss: {trainer.state.output:.4f}, "
-          f"Validation Loss: {val_loss:.4f}, Best Epoch: {best_model_info['epoch']}\n"
-          f"R2: {r2:.4f}")
+          f"Validation Loss: {val_loss:.4f}, Best Epoch: {best_model_info['epoch']}")
 
 
 ProgressBar().attach(trainer, output_transform=lambda x: {'loss': x})
@@ -324,9 +341,12 @@ PeakComparison(
 print("Python <<<<< legit everything else (except C)\n")
 state = evaluator.run(test_loader)
 rel_errors = state.metrics["rel_error_3"]
-print(f"Relative Error (%) Y_pred / Y_true: Left = {rel_errors[0]:.2f}, Center = {rel_errors[1]:.2f}, Right = {rel_errors[2]:.2f}")
+# Print the relative error for each output
+for i, rel_error in enumerate(rel_errors):
+    print(f"Relative Error for output {i+1}: {rel_error:.4e}")
 
 # %% -------Plotting evaluation--------
+
 
 # Seeing how the losses change:
 plt.figure()
@@ -416,6 +436,10 @@ Y_true_unscaled = Y_true_unscaled.cpu().numpy()
 Y_pred_unscaled = Y_pred_unscaled.cpu().numpy()
 diffs = diffs.cpu().numpy() * 1e12  # Convert to pT for better readability
 
+# Mask values which are greater than 1e-6
+mask = np.all(np.abs(Y_pred_unscaled) < 1e-6, axis=1) & np.all(np.abs(Y_true_unscaled) < 1e-6, axis=1)
+Y_pred_unscaled = Y_pred_unscaled[mask]
+
 # For MDE plot, we need intensities and diffs
 intensities = Y_true_unscaled[:, 0]
 
@@ -426,10 +450,10 @@ plt.grid(True)
 
 # plt.plot(intensities, diffs[:, 1], 'b.', label='Center Peak')
 plt.plot(intensities, diffs[:, 0], 'r.', label='Left Peak')
-plt.plot(intensities, diffs[:, 2], 'g.',label='Right Peak')
+plt.plot(intensities, diffs[:, -1], 'g.',label='Right Peak')
 # Connect left and right dots for each intensity
 for i in range(len(intensities)):
-    plt.plot([intensities[i], intensities[i]], [diffs[i, 0], diffs[i, 2]], 'k-', alpha=0.5)
+    plt.plot([intensities[i], intensities[i]], [diffs[i, 0], diffs[i, -1]], 'k-', alpha=0.5)
 plt.title("Mean Deviation Error per Intensity")
 plt.xlabel("Intensity (B0) [T]")
 plt.ylabel("Mean Deviation Error [pT]")
@@ -437,7 +461,9 @@ plt.legend()
 
 
 peak_names = ['Left', 'Center', 'Right']
-fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+if hyperVar['n_outputs'] == 2:
+    peak_names = ['Left', 'Right']
+fig, axes = plt.subplots(1, hyperVar['n_outputs'], figsize=(18, 6))
 fig.suptitle('Predicted vs. True Peak Heights', fontsize=16)
 
 for i, (ax, name) in enumerate(zip(axes, peak_names)):
@@ -465,3 +491,4 @@ for i, (ax, name) in enumerate(zip(axes, peak_names)):
 plt.tight_layout(rect=[0, 0, 1, 0.96])
 plt.show()
 
+# %%

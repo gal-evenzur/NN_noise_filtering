@@ -32,7 +32,7 @@ if testing:
     n_validate = 10
     n_tests = 10
 else:
-    n_trains = 64 * 1  # = 1920
+    n_trains = 64 * 30  # = 1920
     n_validate = 64 * 3  # = 192
     n_tests = 64 * 3
 
@@ -226,7 +226,7 @@ for batch_idx in trange(0, n_tests, batch_size, desc="Creating testing data batc
     
     # Create randomized parameters in batch
     rand_start = time.time()
-    I0_r, B0_r, F_B_r, noise_strength_r, pink_percentage = rand_test(
+    I0_r, B0_r, F_B_r, noise_strength_r, pink_percentage = rand_train(
         I0, B0, F_B, noise_strength, device=device, batch_size=current_batch_size
     )
     rand_time = time.time() - rand_start
