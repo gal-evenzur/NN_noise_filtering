@@ -12,9 +12,9 @@ add_signals = False
 testing = False
 # Stft parameters
 fs = 10000
-total_cycles = 100
+total_cycles = 148
 overlap_perc = 0.85
-cycles_per_window = 5  # Number of cycles in one window
+cycles_per_window = 4  # Number of cycles in one window
 
 B0 = 5e-12  # The magnetic field on the sensor [T]
 F_B = 15  # The magnetic field frequency [Hz]
