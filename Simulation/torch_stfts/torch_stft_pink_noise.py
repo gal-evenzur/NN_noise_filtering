@@ -123,16 +123,24 @@ def rand_train(I0, B0, F_B, noise_strength, device='cpu', batch_size=1):
     # Create random multipliers as tensors directly on the specified device
     I0_mult = torch.rand(batch_size, device=device) * 2 + 0.5  # uniform between 0.5 and 2.5
     B0_mult = torch.rand(batch_size, device=device) * 6 + 1     # uniform between 1 and 7
-    F_B_offsets = torch.randint(F_B - 5, F_B + 21, (batch_size,), device=device)  # inclusive lower, exclusive upper bound
+    F_B_offsets = torch.randint(-10, 10, (batch_size,), device=device)  # between F_B-10, F_B+10
     noise_mult = torch.rand(batch_size, device=device) * 1.5 + 0.2  # uniform between 0.2 and 1.7
+    pink_percentage = torch.rand(batch_size, device=device) * 0.4 + 0.5
+
+
+    # New for testing porpose
+    # I0_mult = torch.ones(batch_size, device=device)
+    # B0_mult = torch.rand(batch_size, device=device) * 6 + 1     # uniform between 1 and 7
+    # F_B_offsets = torch.zeros(batch_size, device=device)
+    # noise_mult = torch.ones(batch_size, device=device)
+    # pink_percentage = torch.zeros(batch_size, device=device)
+
 
     # Apply the multipliers
     I0_r = I0 * I0_mult
     B0_r = B0 * B0_mult
-    F_B_r = F_B_offsets
+    F_B_r = F_B + F_B_offsets
     noise_strength_r = noise_strength * noise_mult
-    pink_percentage = torch.zeros(batch_size, device=device)
-    pink_percentage = torch.rand(batch_size, device=device) * 0.5  # uniform between 0 and 0.5
 
     
     return I0_r, B0_r, F_B_r, noise_strength_r, pink_percentage
@@ -291,10 +299,10 @@ def my_stft(I0, B0, F_B, noise_strength,
             only_center=False,
             is_clean=False,
             only_noise=False,
+            zoom_length=30,
             device='cpu'):
 
     dt = 1 / fs
-    freqs = [2000 - F_B, 2000, 2000 + F_B]  # Frequencies of interest
 
     # Period is 1 / GCD of all frequency components
     if Tperiod is None:
@@ -354,7 +362,7 @@ def my_stft(I0, B0, F_B, noise_strength,
 
     if only_center:
         # Return only around the center frequency (2000 Hz)
-        freq_mask = (freqs_stft >= 1950) & (freqs_stft <= 2050)
+        freq_mask = (freqs_stft >= 2000 - zoom_length) & (freqs_stft <= 2000 + zoom_length)
         freqs_zoom = freqs_stft[freq_mask]
         
         # Handle batch dimension properly
