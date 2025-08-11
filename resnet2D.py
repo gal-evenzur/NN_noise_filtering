@@ -7,14 +7,12 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import Adam
 from torchvision import models
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
 from ignite.engine import Engine, Events
 from ignite.handlers import EarlyStopping, ModelCheckpoint
 from ignite.contrib.handlers import ProgressBar
 from ignite.metrics import Loss
-from ignite.metrics.regression import R2Score
 
 import matplotlib
 matplotlib.use('TkAgg')  # or 'Agg' for testing headless
@@ -29,24 +27,28 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # %%% PARAMS # 
 hyperVar = {
     # Data parameters
-    'batch_size': 16,
+    'batch_size': 16, # Bigger = stable gradients and smaller updates
     'device': device,
 
     # Model parameters
+    'same_scale': True,
     'n_outputs': 2,
-    'Bnumber': 1,  # 0 for B0, 1 for B1, 2 for B2
+    'no_middle': True,  
+    'Bnumber': 2,  # 0 for B0, 1 for B1, 2 for B2
+
 
     # Optimiser parameters
     'optimizer': Adam,
-    'lr': 5e-5,
-    'weight_decay': 4e-5,
+    'lr': 1e-4,
+    'weight_decay': 1e-5,
     'beta1': 0.9, # ++ smoother training but slower response to changes
     'beta2': 0.999, # -- faster adaptation of learning rates but potentially less stability
-    'amsgrad': True, 
+    'amsgrad': False, 
 
     # Training procedure parameters
-    'n_epochs': 20,
-    'patience': 4,
+    'n_epochs': 30,
+    'patience': 5,
+    'score_metric': 'r2_score',
 
     # Plotting parameters
     'n_plotted': 10,
@@ -57,10 +59,12 @@ hyperVar = {
 
 # %% &&&&&& IMPORTING DATA &&&&&&
 start_time = time.time()
+same_scale = hyperVar['same_scale']  # If True, all signals are scaled to the same range
+no_middle = hyperVar['no_middle']  # If True, regress only the left and right peaks
 
-trainSet = SignalDataset('Data/data_stft.h5', split="train", resnet=True, same_scale=False, no_middle=True)
-validateSet = SignalDataset('Data/data_stft.h5', split="validate", resnet=True, same_scale=False, no_middle=True)
-testSet = SignalDataset('Data/data_stft.h5', split="test", resnet=True, same_scale=False, no_middle=True)
+trainSet = SignalDataset('Data/data_stft.h5', split="train", resnet=True, same_scale=same_scale, no_middle=no_middle)
+validateSet = SignalDataset('Data/data_stft.h5', split="validate", resnet=True, same_scale=same_scale, no_middle=no_middle)
+testSet = SignalDataset('Data/data_stft.h5', split="test", resnet=True, same_scale=same_scale, no_middle=no_middle)
 
 dataloader = DataLoader(trainSet, batch_size=hyperVar["batch_size"], shuffle=True)
 validate_loader = DataLoader(validateSet, batch_size=hyperVar["batch_size"], shuffle=False)
@@ -106,12 +110,18 @@ class EfficientNet(nn.Module):
             padding=original_conv.padding,
             bias=False
         )
-        if pretrained:
-            self.net.features[0][0].weight.data = original_conv.weight.data.sum(dim=1, keepdim=True)
+        # if pretrained:
+        #     self.net.features[0][0].weight.data = original_conv.weight.data.sum(dim=1, keepdim=True)
 
         # --- Adapt the final layer for regression ---
         num_ftrs = self.net.classifier[1].in_features
-        self.net.classifier[1] = nn.Linear(num_ftrs, n_classes)
+        self.net.classifier = nn.Sequential(
+            nn.Dropout(p=0.3),           # Optional dropout
+            nn.Linear(num_ftrs, 128),    # First FC layer
+            nn.ReLU(),                   # Activation
+            nn.Dropout(p=0.2),           # Another dropout
+            nn.Linear(128, n_classes)    # Output FC layer (regression)
+        )
 
         # --- Unfreeze the new layers so they can be trained ---
         if pretrained and freeze_pretrained:
@@ -140,13 +150,12 @@ losses = []
 val_losses = []
 eps = []
 
-criterion = nn.MSELoss()  # Mean Absolute Error (MAE)
+criterion = nn.L1Loss()  # Mean Absolute Error (MAE)
 optimizer = hyperVar['optimizer'](
     model.parameters(), 
     lr=hyperVar['lr'], 
     weight_decay=hyperVar['weight_decay'],
     amsgrad=hyperVar['amsgrad'],
-    betas=(hyperVar['beta1'], hyperVar['beta2'])
 )
 
 def supervised_train(model, device="cpu"):
@@ -210,9 +219,12 @@ trainer = supervised_train(model, device=device)
 
 evaluator = supervised_evaluator(model, device=device)
 
+def score(engine):
+    return score_function(engine, metric_name=hyperVar['score_metric'])
+
 handler = EarlyStopping(
     patience=hyperVar['patience'],  # Number of epochs to wait for improvement
-    score_function=score_function,
+    score_function=score,
     trainer=trainer
 )
 evaluator.add_event_handler(Events.COMPLETED, handler)
@@ -226,8 +238,8 @@ checkpoint_handler = ModelCheckpoint(
     checkpoint_dir,
     filename_prefix="best_model",
     require_empty=False,
-    score_function=score_function,  # Using the same score_function as early stopping
-    score_name="val_loss",
+    score_function=score,  # Using the same score_function as early stopping
+    score_name=hyperVar['score_metric'],
     n_saved=1,  # Only save the best model
     global_step_transform=lambda engine, _: engine.state.epoch
 )
@@ -239,8 +251,19 @@ best_model_info = {
     'score': float('-inf'),  # Initialize with worst possible score (we want to maximize -loss)
     'epoch': 0
 }
-# Attach R2Score metric
 
+X_params, Y_params = validateSet.unscale()
+
+def apply_unscaling(output):
+    y_pred_scaled = unscale_tensor(output[0], Y_params)
+    y_true_scaled = unscale_tensor(output[1], Y_params)
+    return y_pred_scaled, y_true_scaled
+transform_func = lambda x: apply_unscaling(x)
+
+r2(
+    output_transform=transform_func,
+    device=device
+).attach(evaluator, 'r2_score')
 
 @trainer.on(Events.EPOCH_COMPLETED)
 def run_validation_loss_track(engine):
@@ -252,10 +275,11 @@ def run_validation_loss_track(engine):
     evaluator.run(validate_loader)
     val_loss = evaluator.state.metrics['loss']
     val_losses.append(val_loss)
+    r2 = evaluator.state.metrics['r2_score']
     
 
     # Check if this is the best model so far
-    current_score = -val_loss  # Negative because we want to maximize score (minimize loss)
+    current_score = score(evaluator)  # Negative because we want to maximize score (minimize loss)
     if current_score > best_model_info['score']:
         best_model_info['score'] = current_score
         best_model_info['params'] = {k: v.clone().detach() for k, v in model.state_dict().items()}
@@ -264,6 +288,7 @@ def run_validation_loss_track(engine):
     
     print(f"Epoch {trainer.state.epoch} - Training Loss: {trainer.state.output:.4f}, "
           f"Validation Loss: {val_loss:.4f}, Best Epoch: {best_model_info['epoch']}")
+    print("R2 Score:", r2)
 
 
 ProgressBar().attach(trainer, output_transform=lambda x: {'loss': x})
@@ -344,10 +369,8 @@ rel_errors = state.metrics["rel_error_3"]
 # Print the relative error for each output
 for i, rel_error in enumerate(rel_errors):
     print(f"Relative Error for output {i+1}: {rel_error:.4e}")
-
-# %% -------Plotting evaluation--------
-
-
+print("R2 Score for output :", state.metrics['r2_score'])
+# %% -------Plotting evaluation--------\
 # Seeing how the losses change:
 plt.figure()
 plt.semilogy(eps, losses, label='Training Loss')
@@ -436,12 +459,12 @@ Y_true_unscaled = Y_true_unscaled.cpu().numpy()
 Y_pred_unscaled = Y_pred_unscaled.cpu().numpy()
 diffs = diffs.cpu().numpy() * 1e12  # Convert to pT for better readability
 
-# Mask values which are greater than 1e-6
-mask = np.all(np.abs(Y_pred_unscaled) < 1e-6, axis=1) & np.all(np.abs(Y_true_unscaled) < 1e-6, axis=1)
-Y_pred_unscaled = Y_pred_unscaled[mask]
+# Mask values which are greater than 1e-3
+# mask = np.all(np.abs(Y_pred_unscaled) < 1e-3, axis=1) & np.all(np.abs(Y_true_unscaled) < 1e-6, axis=1)
+# Y_pred_unscaled = Y_pred_unscaled[mask]
 
 # For MDE plot, we need intensities and diffs
-intensities = Y_true_unscaled[:, 0]
+intensities = Y_true_unscaled[:, 0] * 1e12
 
 # Plotting MDEPerIntensity
 plt.figure(figsize=(10, 6))

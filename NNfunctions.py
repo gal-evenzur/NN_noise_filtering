@@ -293,6 +293,38 @@ class MDEPerIntensity(Metric):
         diffs = torch.concatenate(self._diffs, dim=0)              # shape: [N, 3]
         return intensities, preds, diffs
 
-def score_function(engine):
+class r2(Metric):
+    def __init__(self, output_transform=lambda x: x, device="cpu"):
+        super(r2, self).__init__(output_transform=output_transform, device=device)
+
+    def reset(self):
+        self._y_true = []
+        self._y_pred = []
+
+    def update(self, output):
+        y_p, y_t = output[0].detach(), output[1].detach()
+        self._y_pred.append(y_p)
+        self._y_true.append(y_t)
+
+    def compute(self):
+        y_true = torch.cat(self._y_true, dim=0)
+        y_pred = torch.cat(self._y_pred, dim=0)
+        return r2_score(y_true, y_pred)
+    
+def r2_score(y_true, y_pred):
+    # Calculate R^2 score
+    ss_res = ((y_true - y_pred) ** 2).sum(dim=0)
+    ss_tot = ((y_true - y_true.mean(dim=0)) ** 2).sum(dim=0)
+    r2 = 1 - ss_res / ss_tot
+    # Handle division by zero (if ss_tot == 0 for any output)
+    r2 = torch.where(ss_tot != 0, r2, torch.zeros_like(r2))
+    return r2  # shape: [n_outputs]
+
+def score_function(engine, metric_name='loss'):
     # Lower loss is better, so return negative loss
-    return -engine.state.metrics['loss']
+    metric = engine.state.metrics[metric_name]
+    if metric_name == 'loss':
+        return -metric
+    elif metric_name == 'r2_score':
+        # metric is a tensor, return the max of r2 (float) between the first and last items
+        return max(metric[0], metric[-1]).item()
