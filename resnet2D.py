@@ -27,20 +27,20 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # %%% PARAMS # 
 hyperVar = {
     # Data parameters
-    'batch_size': 16, # Bigger = stable gradients and smaller updates
+    'batch_size': 8, # Bigger = stable gradients and smaller updates
     'device': device,
 
     # Model parameters
     'same_scale': True,
     'n_outputs': 2,
-    'no_middle': True,  
-    'Bnumber': 2,  # 0 for B0, 1 for B1, 2 for B2
+    'no_middle': True,
+    'Bnumber': 0,  # 0 for B0, 1 for B1, 2 for B2
 
 
     # Optimiser parameters
     'optimizer': Adam,
     'lr': 1e-4,
-    'weight_decay': 1e-5,
+    'weight_decay': 0,
     'beta1': 0.9, # ++ smoother training but slower response to changes
     'beta2': 0.999, # -- faster adaptation of learning rates but potentially less stability
     'amsgrad': False, 
@@ -72,7 +72,7 @@ test_loader = DataLoader(testSet, batch_size=hyperVar["batch_size"], shuffle=Fal
 
 load_time = time.time() - start_time
 print(f"Data loaded in {load_time:.2f} seconds")
-print(f"Dataset sizes: Train={len(trainSet)}, Validation={len(validateSet)}, Test={len(testSet)}")
+print(f"Dataset sizes: Train={len(trainSet)}, Validation={len(validateSet)}, Test={len(testSet)}, Noise={len(noiseSet)}")
 
 
 # %% Structure for the NN: #
@@ -290,7 +290,7 @@ def run_validation_loss_track(engine):
 ProgressBar().attach(trainer, output_transform=lambda x: {'loss': x})
 # %% CHECKPOINTS #
 
-print("Starting training...")
+print("CHOOSE CHECKPOINT...")
 # Ask user if they want to resume training from a checkpoint
 checkpoint_dir = "./checkpoints"
 if os.path.exists(checkpoint_dir):
@@ -372,8 +372,8 @@ rel_errors = state.metrics["rel_error_3"]
 for i, rel_error in enumerate(rel_errors):
     print(f"Relative Error for output {i+1}: {rel_error:.4e}")
 print("R2 Score for output :", state.metrics['r2_score'])
-# %% -------Plotting evaluation--------\
-# Seeing how the losses change:
+# %% -------Plotting evaluation--------
+# ---------- Loss plot
 plt.figure()
 plt.semilogy(eps, losses, label='Training Loss')
 plt.semilogy(eps, val_losses, '--g', label='Validation Loss')
@@ -382,7 +382,7 @@ plt.xlabel("Epochs")
 plt.ylabel("Loss")
 plt.legend()
 
-# Plotting the dots:
+# ---------- Signal plotting 
 n = hyperVar['n_plotted']
 start = hyperVar['start']
 
@@ -394,11 +394,9 @@ import matplotlib.lines as mlines
 data_handle = mlines.Line2D([], [], color='black', marker='o', linestyle='None', label='Data')
 pred_handle = mlines.Line2D([], [], color='blue', marker='o', linestyle='None', label='Prediction')
 
-# Add a figure-level legend
 fig.legend(handles=[pred_handle, data_handle],
            loc='upper center', ncol=3, fontsize=10, frameon=False)
 
-# Plotting the signals with the peaks
 for i_ in range(start,start+n):
     X_test,Y_test = set[i_]
     clean_sig = set.get_clean_sig(i_)
@@ -453,9 +451,11 @@ for i_ in range(start,start+n):
 #    sigPlot[i].set_xticks(np.linspace(xbor[0], xbor[1], 5))  # 11 ticks between 1950 and 2050
 #    sigPlot[i].set_xticklabels([f"{xbor[0]:.0f}", "", "", "", f"{xbor[1]:.0f}"])
 
+# ---------- Mean Deviation Errors for each B0
+
+
 plt.tight_layout(rect=[0.03, 0.03, 1, 0.88])
 
-# Predicted vs True plots
 Y_true_unscaled, Y_pred_unscaled, diffs = state.metrics["peak_comparison"]
 Y_true_unscaled = Y_true_unscaled.cpu().numpy()
 Y_pred_unscaled = Y_pred_unscaled.cpu().numpy()
@@ -465,26 +465,23 @@ diffs = diffs.cpu().numpy() * 1e12  # Convert to pT for better readability
 # mask = np.all(np.abs(Y_pred_unscaled) < 1e-3, axis=1) & np.all(np.abs(Y_true_unscaled) < 1e-6, axis=1)
 # Y_pred_unscaled = Y_pred_unscaled[mask]
 
-# For MDE plot, we need intensities and diffs
-intensities = Y_true_unscaled[:, 0] * 1e12
+intensities = Y_true_unscaled[:, 0] * 1e12;
 
-# Plotting MDEPerIntensity
 plt.figure(figsize=(10, 6))
 plt.grid(True)
-# plt.yscale('symlog', linthresh=1e-2)  # Log scale for better visibility of differences
 
+# plt.yscale('symlog', linthresh=1e-2)  # Log scale for better visibility of differences
 # plt.plot(intensities, diffs[:, 1], 'b.', label='Center Peak')
 plt.plot(intensities, diffs[:, 0], 'r.', label='Left Peak')
 plt.plot(intensities, diffs[:, -1], 'g.',label='Right Peak')
-# Connect left and right dots for each intensity
-for i in range(len(intensities)):
+for i in range(len(intensities)): # Connect left and right dots for each intensity
     plt.plot([intensities[i], intensities[i]], [diffs[i, 0], diffs[i, -1]], 'k-', alpha=0.5)
 plt.title("Mean Deviation Error per Intensity")
 plt.xlabel("Intensity (B0) [T]")
 plt.ylabel("Mean Deviation Error [pT]")
 plt.legend()
 
-
+# --------- Line fit
 peak_names = ['Left', 'Center', 'Right']
 if hyperVar['n_outputs'] == 2:
     peak_names = ['Left', 'Right']
@@ -514,6 +511,48 @@ for i, (ax, name) in enumerate(zip(axes, peak_names)):
     ax.grid(True)
 
 plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+# ----------- Noise Plot
+n = hyperVar['n_plotted']
+start = hyperVar['start']
+
+noiseSet = SignalDataset('Data/data_stft.h5', split="noise", resnet=True, same_scale=same_scale, no_middle=no_middle)
+
+# Create arrays to store predicted values for left and right peaks
+left_peak_predictions = []
+right_peak_predictions = []
+
+# Process all noise samples
+for i_ in range(len(noiseSet)):
+    X_test, _ = noiseSet[i_]
+
+    X_test = X_test.unsqueeze(0)  # Reshape for model input
+    Y_pred = model(X_test.to(device))
+    
+    if hyperVar['unscaled_plot']:
+        Y_pred_plot = unscale_tensor(Y_pred, Y_params)
+    else:
+        Y_pred_plot = Y_pred
+    
+    Y_pred_plot = Y_pred_plot.cpu().detach().numpy()
+    
+    # Store predicted values
+    left_peak_predictions.append(Y_pred_plot[0])  # Left peak [0]
+    right_peak_predictions.append(Y_pred_plot[-1])  # Right peak [-1]
+
+# Convert to numpy arrays for easier plotting
+left_peak_predictions = np.array(left_peak_predictions)
+right_peak_predictions = np.array(right_peak_predictions)
+
+# Create scatter plot comparing left vs right peak predictions
+plt.figure(figsize=(8, 8))
+plt.scatter(left_peak_predictions * 1e12, right_peak_predictions * 1e12, alpha=0.5)
+plt.title('Left Peak vs Right Peak Predictions from Noise')
+plt.xlabel('Left Peak Prediction [pT]')
+plt.ylabel('Right Peak Prediction [pT]')
+plt.grid(True)
+plt.axis('equal')
+
 plt.show()
 
 # %%

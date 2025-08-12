@@ -31,10 +31,12 @@ if testing:
     n_trains = 20
     n_validate = 10
     n_tests = 10
+    n_noise = 5
 else:
     n_trains = 64 * 30  # = 1920
     n_validate = 64 * 3  # = 192
     n_tests = 64 * 3
+    n_noise = 64
 
 # Finding out the size of stft #
 
@@ -68,11 +70,11 @@ Corresponding_B0 = []
 # printing the size of the clear_stft and noisy_stft tensors
 print("Size of clear_stft:", clear_stft.shape)
 
-for batch_idx in trange(0, n_trains, batch_size, desc="Creating training data batches"):
+for batch_idx in trange(0, n, batch_size, desc="Creating training data batches"):
     # Calculate actual batch size (may be smaller for last batch)
-    current_batch_size = min(batch_size, n_trains - batch_idx)
-    
-    
+    current_batch_size = min(batch_size, n - batch_idx)
+
+
     # Create randomized parameters in batch
     rand_start = time.time()
     I0_r, B0_r, F_B_r, noise_strength_r, pink_percentage = rand_train(
@@ -154,9 +156,9 @@ Corresponding_F_B = []
 Corresponding_B0 = []
 
 validate_start_time = time.time()
-for batch_idx in trange(0, n_validate, batch_size, desc="Creating validation data batches"):
+for batch_idx in trange(0, n, batch_size, desc="Creating validation data batches"):
     # Calculate actual batch size (may be smaller for last batch)
-    current_batch_size = min(batch_size, n_validate - batch_idx)
+    current_batch_size = min(batch_size, n - batch_idx)
     
     
     # Create randomized parameters in batch
@@ -219,14 +221,14 @@ Corresponding_F_B = []
 Corresponding_B0 = []
 
 test_start_time = time.time()
-for batch_idx in trange(0, n_tests, batch_size, desc="Creating testing data batches"):
+for batch_idx in trange(0, n, batch_size, desc="Creating testing data batches"):
     # Calculate actual batch size (may be smaller for last batch)
-    current_batch_size = min(batch_size, n_tests - batch_idx)
+    current_batch_size = min(batch_size, n - batch_idx)
     
     
     # Create randomized parameters in batch
     rand_start = time.time()
-    I0_r, B0_r, F_B_r, noise_strength_r, pink_percentage = rand_train(
+    I0_r, B0_r, F_B_r, noise_strength_r, pink_percentage = rand_test(
         I0, B0, F_B, noise_strength, device=device, batch_size=current_batch_size
     )
     rand_time = time.time() - rand_start
@@ -287,30 +289,66 @@ print(f"F_B: {test_F_B.shape}")
 print(f"B0: {test_B0.shape}")
 
 
-# %% Noise for testing
-'''
-clear_sig = []
-clear_sig_f = []
-sig_time = []
-sig_f = []
-
-n_noise = 10
-for _ in range(10):
-
-    params = rand_test(I0, B0, F_B,noise_strength)
-    Volt, fVolt, Signal, fSignal, Time, freq = Signal_Noise_FFts(*params, only_noise=True)
-
-    real_F_B = params[2]
-
-    clear_sig_f.append(fVolt.tolist())
-    sig_f.append(fSignal.tolist())
+# %% *************NOISE************* #
+n = n_noise
+clear_stft = torch.empty(n, stft_size[1], stft_size[2], device=device)  # Shape: (n, n_freqs, n_time_bins)
+noisy_stft = torch.empty(n, stft_size[1], stft_size[2], device=device)
+Corresponding_F_B = []
+Corresponding_B0 = []
 
 
-noise_for_test = {
-    "f_cSignal": clear_sig_f,
-    "f_noise": sig_f,
-}
-'''
+test_start_time = time.time()
+for batch_idx in trange(0, n, batch_size, desc="Creating just Noise data batches"):
+    # Calculate actual batch size (may be smaller for last batch)
+    current_batch_size = min(batch_size, n - batch_idx)
+    
+    
+    # Create randomized parameters in batch
+    rand_start = time.time()
+    I0_r, B0_r, F_B_r, noise_strength_r, pink_percentage = rand_test(
+        I0, 0, F_B, noise_strength, device=device, batch_size=current_batch_size
+    )
+    rand_time = time.time() - rand_start
+    
+    # Generate clean STFTs in batch
+    stft_start = time.time()
+    clean_magnitude, _, _ = my_stft(I0_r, B0_r, F_B_r, noise_strength_r,
+                                   fs=fs,
+                                   total_cycles=total_cycles,
+                                   overlap=overlap_perc,
+                                   cycles_per_window=cycles_per_window,
+                                   Tperiod=1,
+                                   is_clean=True,
+                                   only_center=True,
+                                   device=device)
+    clean_stft_time = time.time() - stft_start
+    
+    # Generate noisy STFTs in batch
+    stft_start = time.time()
+    magnitude, _, _ = my_stft(I0_r, B0_r, F_B_r, noise_strength_r,
+                             fs=fs,
+                             total_cycles=total_cycles,
+                             overlap=overlap_perc,
+                             cycles_per_window=cycles_per_window,
+                             Tperiod=1,
+                             only_center=True,
+                             device=device)
+    noisy_stft_time = time.time() - stft_start
+    
+
+    
+    # Store results
+    clear_stft[batch_idx:batch_idx+current_batch_size] = clean_magnitude
+    noisy_stft[batch_idx:batch_idx+current_batch_size] = magnitude
+    Corresponding_F_B.extend(F_B_r.tolist())
+    Corresponding_B0.extend(B0_r.tolist())
+
+
+# Store data directly as numpy arrays for better efficiency
+noise_f_cSignal = clear_stft.cpu().numpy()
+noise_f_signals = noisy_stft.cpu().numpy()
+noise_F_B = np.array(Corresponding_F_B)
+noise_B0 = np.array(Corresponding_B0)
 
 # %% File saving
 path = "C:\\Users\\galev\\Documents\\Research\\Data\\data_stft.h5"
@@ -379,6 +417,25 @@ with h5py.File(path, "w") as f:
                              chunks=test_fb_chunks,
                              compression=None)
 
+    # Noise data
+    noise_samples = noise_f_cSignal.shape[0]
+    noise_chunk_size = min(16, noise_samples)
+    noise_stft_chunks = (noise_chunk_size, noise_f_cSignal.shape[1], noise_f_cSignal.shape[2])
+    noise_fb_chunks = (min(64, noise_samples),)
+    noise_group = f.create_group("noise")
+    noise_group.create_dataset("f_cSignal", data=noise_f_cSignal, 
+                              chunks=noise_stft_chunks,
+                              compression=None)
+    noise_group.create_dataset("f_signals", data=noise_f_signals, 
+                              chunks=noise_stft_chunks,
+                              compression=None)
+    noise_group.create_dataset("F_B", data=noise_F_B, 
+                              chunks=noise_fb_chunks,
+                              compression=None)
+    noise_group.create_dataset("B0", data=noise_B0, 
+                              chunks=noise_fb_chunks,
+                              compression=None)
+
     # Time and frequency axes (no chunking needed for small 1D arrays)
     f.create_dataset("t", data=sig_t.cpu().numpy(), compression=None)
     f.create_dataset("f", data=sig_f.cpu().numpy(), compression=None)
@@ -387,6 +444,7 @@ with h5py.File(path, "w") as f:
     print(f"Training STFT chunks: {train_stft_chunks}")
     print(f"Validation STFT chunks: {validate_stft_chunks}")
     print(f"Test STFT chunks: {test_stft_chunks}")
+    print(f"Noise STFT chunks: {noise_stft_chunks}")
     print(f"F_B/B0 chunks: {train_fb_chunks[0]} samples")
 
 total_execution_time = time.time() - total_start_time
