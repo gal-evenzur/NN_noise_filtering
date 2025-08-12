@@ -4,6 +4,7 @@ from functools import reduce
 import numpy as np
 import torch
 from numpy.random import normal as normal
+float_type = torch.float64
 
 def var(reducer):
     # White noise will fall 95% of the time between +- 1.96 * sigma
@@ -16,7 +17,7 @@ def make_fft(data, rate, num, device='cpu'):
 
     # Convert to tensor if it's not already
     if not isinstance(data, torch.Tensor):
-        data = torch.tensor(data, dtype=torch.float64, device=device)
+        data = torch.tensor(data, dtype=float_type, device=device)
     elif data.device.type != device:
         data = data.to(device)
 
@@ -147,17 +148,17 @@ def rand_train(I0, B0, F_B, noise_strength, device='cpu', batch_size=1):
 
 
 def rand_test(I0, B0, F_B, noise_strength, device='cpu', batch_size=1):
-    # Create random values as tensors directly on the specified device
-    I0_noise = torch.normal(0, var(0.1*I0), size=(batch_size,), device=device)
-    B0_mult = torch.rand(batch_size, device=device) * 4 + 1  # uniform between 1 and 5
-    F_B_offsets = torch.randint(F_B - 5, F_B + 6, (batch_size,), device=device)  # inclusive lower, exclusive upper bound
-    
-    # Apply the values
-    I0_r = I0 + I0_noise
+    I0_mult = torch.rand(batch_size, device=device) * 2 + 0.5  # uniform between 0.5 and 2.5
+    B0_mult = torch.rand(batch_size, device=device) * 3 + 0.5     # uniform between 0.5 and 3.5
+    F_B_offsets = torch.randint(-5, 5, (batch_size,), device=device)  # between F_B-5, F_B+5
+    noise_mult = torch.rand(batch_size, device=device) + 1  # uniform between 1 and 2
+    pink_percentage = torch.rand(batch_size, device=device) * 0.4 + 0.5
+
+    # Apply the multipliers
+    I0_r = I0 * I0_mult
     B0_r = B0 * B0_mult
-    F_B_r = F_B_offsets
-    noise_strength_r = torch.full((batch_size,), noise_strength, device=device)
-    pink_percentage = torch.zeros(batch_size, device=device)
+    F_B_r = F_B + F_B_offsets
+    noise_strength_r = noise_strength * noise_mult
     
     return I0_r, B0_r, F_B_r, noise_strength_r, pink_percentage
 
@@ -173,24 +174,24 @@ def generate_voltage_signal(I0, B0, F_B, dt, start_time, end_time, device='cpu')
     F_c = 2000  # The frequency of the current in the sensor [Hz]
 
     # Create time vector as tensor directly on the specified device
-    Time = torch.arange(start_time, end_time, dt, dtype=torch.float64, device=device)
+    Time = torch.arange(start_time, end_time, dt, dtype=float_type, device=device)
 
     # Calculate voltage signal using tensors
     delta_rho = rho_perp * AMRR  # [ohm * m]
     
     # Convert to tensors if not already
     if not isinstance(I0, torch.Tensor):
-        I0 = torch.tensor(I0, dtype=torch.float64, device=device)
+        I0 = torch.tensor(I0, dtype=float_type, device=device)
     elif I0.device.type != device:
         I0 = I0.to(device)
         
     if not isinstance(B0, torch.Tensor):
-        B0 = torch.tensor(B0, dtype=torch.float64, device=device)
+        B0 = torch.tensor(B0, dtype=float_type, device=device)
     elif B0.device.type != device:
         B0 = B0.to(device)
         
     if not isinstance(F_B, torch.Tensor):
-        F_B = torch.tensor(F_B, dtype=torch.float64, device=device)
+        F_B = torch.tensor(F_B, dtype=float_type, device=device)
     elif F_B.device.type != device:
         F_B = F_B.to(device)
     
