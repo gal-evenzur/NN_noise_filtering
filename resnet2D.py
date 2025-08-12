@@ -72,7 +72,7 @@ test_loader = DataLoader(testSet, batch_size=hyperVar["batch_size"], shuffle=Fal
 
 load_time = time.time() - start_time
 print(f"Data loaded in {load_time:.2f} seconds")
-print(f"Dataset sizes: Train={len(trainSet)}, Validation={len(validateSet)}, Test={len(testSet)}, Noise={len(noiseSet)}")
+print(f"Dataset sizes: Train={len(trainSet)}, Validation={len(validateSet)}, Test={len(testSet)}")
 
 
 # %% Structure for the NN: #
@@ -138,7 +138,6 @@ class EfficientNet(nn.Module):
 
 # %% DELETING OLD PARAMETERS !!! 
 model = EfficientNet(n_classes=hyperVar['n_outputs'], pretrained=True, freeze_pretrained=False)
-model = model.double()  # Convert model to float64
 
 # %% ENGINE SETUP #
 

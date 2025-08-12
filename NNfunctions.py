@@ -8,12 +8,14 @@ import json
 import h5py
 import numpy as np
 from Simulation.torch_stfts.torch_stft_pink_noise import peak_heights
+float_type = torch.float32
 
 def scale_tensor(dat_raw, log=False, norm=False, minmax=False, tensor=False, resnet=False):
     sc_par = {}
     # print(f"data is {dat_raw.shape} - {min.shape} / ({max.shape} - {min.shape} ")
     if tensor:
         lib = torch
+        dat_raw = torch.tensor(dat_raw, dtype=float_type)
     else:
         lib = np
 
@@ -49,7 +51,7 @@ def scale_like_tensor(dat_raw, params):
     '''
 
     if not isinstance(dat_raw, torch.Tensor):
-        dat_raw = torch.tensor(dat_raw, dtype=torch.float64)
+        dat_raw = torch.tensor(dat_raw, dtype=float_type)
 
     if params.get('log'):
         dat_raw = torch.log10(dat_raw)
@@ -99,15 +101,15 @@ class SignalDataset(Dataset):
                 clean_raw = h5_file[f'{split}/f_cSignal'][:]
                 self.F_B = h5_file[f'{split}/F_B'][:]
                 self.B0 = h5_file[f'{split}/B0'][:] 
-                self.f = torch.tensor(h5_file['f'][:], dtype=torch.float64)
-                self.time = torch.tensor(h5_file['t'][:], dtype=torch.float64) if 't' in h5_file else None
+                self.f = torch.tensor(h5_file['f'][:], dtype=float_type)
+                self.time = torch.tensor(h5_file['t'][:], dtype=float_type) if 't' in h5_file else None
             
 
             self.clean = clean_raw
-            sig_raw = torch.tensor(sig_raw, dtype=torch.float64)
-            clean_raw = torch.tensor(clean_raw, dtype=torch.float64)
-            self.F_B = torch.tensor(self.F_B, dtype=torch.int32).unsqueeze(1)
-            
+            sig_raw = torch.tensor(sig_raw, dtype=float_type)
+            clean_raw = torch.tensor(clean_raw, dtype=float_type)
+            self.F_B = torch.tensor(self.F_B, dtype=float_type).unsqueeze(1)
+
         else: # Json file
             # Load JSON data (original implementation)
             with open(data_path, "r") as f:
@@ -137,7 +139,7 @@ class SignalDataset(Dataset):
         return len(self.X)
 
     def __getitem__(self, idx):
-        return self.X[idx], self.Y[idx]
+        return self.X[idx], self.Y[idx].squeeze()
 
     def get_freqs(self):
         return self.f
