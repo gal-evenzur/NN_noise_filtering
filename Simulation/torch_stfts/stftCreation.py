@@ -11,10 +11,19 @@ from tqdm import trange
 add_signals = False
 testing = False
 # Stft parameters
+length = 221
+'''
+Allowed lengths [210 -> 300]: {actual_l: length_inputted}
+[{217: 218}, {219: 220}, {221: 221}, {221: 222}, {227: 228}, {229: 229}, {229: 230}, 
+{231: 231}, {231: 232}, {237: 237}, {237: 238}, {239: 239}, {239: 240}, {241: 241}, 
+{247: 248}, {257: 258}]
+'''
+ratio = length / 241
 fs = 10000
-total_cycles = 148
+total_cycles = round(148 * ratio)
 overlap_perc = 0.85
 cycles_per_window = 4  # Number of cycles in one window
+zoom_freq = 30 * ratio
 
 B0 = 5e-12  # The magnetic field on the sensor [T]
 F_B = 15  # The magnetic field frequency [Hz]
@@ -29,8 +38,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 if testing:
     n_trains = 20
-    n_validate = 10
-    n_tests = 10
+    n_validate = 5
+    n_tests = 5
     n_noise = 5
 else:
     n_trains = 64 * 30  # = 1920
@@ -40,18 +49,21 @@ else:
 
 # Finding out the size of stft #
 
-stft_size = dummy_stft_size(fs, total_cycles, overlap_perc, cycles_per_window, Tperiod=1, only_center=True)
-print("Dummy stft size:", stft_size)
 
 # Get STFT axes once, as they are the same for all samples
-_, sig_f, sig_t = my_stft(50e-3, 4e-12, 15, 0.5e-10,
+stft_dummy, sig_f, sig_t = my_stft(50e-3, 4e-12, 15, 0.5e-10,
                                 fs=fs,
                                 total_cycles=total_cycles,
                                 overlap=overlap_perc,
                                 cycles_per_window=cycles_per_window,
                                 Tperiod=1,
                                 only_center=True,
+                                zoom_length=zoom_freq,
                                 device=device)
+stft_size = stft_dummy.shape
+
+print("Dummy stft size:", stft_size)
+
 
 # %% **************TRAINING*************** # 
 
@@ -92,6 +104,7 @@ for batch_idx in trange(0, n, batch_size, desc="Creating training data batches")
                                    Tperiod=1,
                                    is_clean=True,
                                    only_center=True,
+                                   zoom_length=zoom_freq,
                                    device=device)
     clean_stft_time = time.time() - stft_start
     
@@ -104,6 +117,7 @@ for batch_idx in trange(0, n, batch_size, desc="Creating training data batches")
                              cycles_per_window=cycles_per_window,
                              Tperiod=1,
                              only_center=True,
+                             zoom_length=zoom_freq,
                              device=device)
     noisy_stft_time = time.time() - stft_start
     
@@ -178,6 +192,7 @@ for batch_idx in trange(0, n, batch_size, desc="Creating validation data batches
                                    Tperiod=1,
                                    is_clean=True,
                                    only_center=True,
+                                   zoom_length=zoom_freq, 
                                    device=device)
     clean_stft_time = time.time() - stft_start
     
@@ -190,6 +205,7 @@ for batch_idx in trange(0, n, batch_size, desc="Creating validation data batches
                              cycles_per_window=cycles_per_window,
                              Tperiod=1,
                              only_center=True,
+                             zoom_length=zoom_freq,
                              device=device)
     noisy_stft_time = time.time() - stft_start
     
@@ -243,6 +259,7 @@ for batch_idx in trange(0, n, batch_size, desc="Creating testing data batches"):
                                    Tperiod=1,
                                    is_clean=True,
                                    only_center=True,
+                                   zoom_length=zoom_freq,
                                    device=device)
     clean_stft_time = time.time() - stft_start
     
@@ -255,6 +272,7 @@ for batch_idx in trange(0, n, batch_size, desc="Creating testing data batches"):
                              cycles_per_window=cycles_per_window,
                              Tperiod=1,
                              only_center=True,
+                             zoom_length=zoom_freq,
                              device=device)
     noisy_stft_time = time.time() - stft_start
     
@@ -320,6 +338,7 @@ for batch_idx in trange(0, n, batch_size, desc="Creating just Noise data batches
                                    Tperiod=1,
                                    is_clean=True,
                                    only_center=True,
+                                   zoom_length=zoom_freq,
                                    device=device)
     clean_stft_time = time.time() - stft_start
     
@@ -332,6 +351,7 @@ for batch_idx in trange(0, n, batch_size, desc="Creating just Noise data batches
                              cycles_per_window=cycles_per_window,
                              Tperiod=1,
                              only_center=True,
+                             zoom_length=zoom_freq,
                              device=device)
     noisy_stft_time = time.time() - stft_start
     
