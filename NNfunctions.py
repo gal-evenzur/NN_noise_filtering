@@ -330,3 +330,5 @@ def score_function(engine, metric_name='loss'):
     elif metric_name == 'r2_score':
         # metric is a tensor, return the max of r2 (float) between the first and last items
         return max(metric[0], metric[-1]).item()
+
+

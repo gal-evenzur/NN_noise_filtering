@@ -7,8 +7,9 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import Adam
 from torch.utils.data import DataLoader
-from torch.optim import Adam
+from torch.optim import Adam, AdamW
 from torchvision import models
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
 from ignite.engine import Engine, Events
@@ -33,22 +34,27 @@ hyperVar = {
     # Model parameters
     'same_scale': True,
     'n_outputs': 2,
-    'no_middle': True,
     'Bnumber': 0,  # 0 for B0, 1 for B1, 2 for B2
 
 
     # Optimiser parameters
-    'optimizer': Adam,
-    'lr': 1e-4,
-    'weight_decay': 0,
+    'optimizer': AdamW,
+    'h_lr': 5e-4,
+    'b_lr': 1e-4,
+    'weight_decay': 1e-5,
+    'wd_off_below_lr': 5e-6,
     'beta1': 0.9, # ++ smoother training but slower response to changes
     'beta2': 0.999, # -- faster adaptation of learning rates but potentially less stability
     'amsgrad': False, 
 
     # Training procedure parameters
-    'n_epochs': 30,
-    'patience': 5,
+    'freeze_backbone_epochs': 2,    # set to 0 to disable; no reinit needed since lr=0 during freeze
+    'n_epochs': 100,
+    'patience': 6,
     'score_metric': 'r2_score',
+    'lr_factor': 0.5,
+    'lr_patience': 2, # number of no improvement rounds before lowering lr
+    'min_lr': 1e-6,
 
     # Plotting parameters
     'n_plotted': 10,
@@ -56,6 +62,7 @@ hyperVar = {
     'unscaled_plot': True,
             }
 
+hyperVar['no_middle'] = True if hyperVar['n_outputs'] == 2 else False 
 
 # %% &&&&&& IMPORTING DATA &&&&&&
 start_time = time.time()
@@ -136,6 +143,44 @@ class EfficientNet(nn.Module):
         """
         return self.net(x)
 
+def build_param_groups(model, lr_head, lr_body, weight_decay):
+    """
+    4 groups:
+      0: backbone weights (with weight decay)
+      1: backbone bias/norm (no decay)
+      2: head weights (with weight decay)
+      3: head bias/norm (no decay)
+    """
+    bb_wd, bb_nd, hd_wd, hd_nd = [], [], [], []
+
+    def is_norm_or_bias(name):
+        n = name.lower()
+        return n.endswith(".bias") or "bn" in n or "norm" in n or "gn" in n
+
+    for name, p in model.named_parameters():
+        if not p.requires_grad:
+            continue
+        is_head = name.startswith("net.classifier")
+        if is_head:
+            (hd_nd if is_norm_or_bias(name) else hd_wd).append(p)
+        else:
+            (bb_nd if is_norm_or_bias(name) else bb_wd).append(p)
+
+    groups = [
+        {'params': bb_wd, 'lr': lr_body, 'weight_decay': weight_decay, 'backbone': True,  'decay': True},
+        {'params': bb_nd, 'lr': lr_body, 'weight_decay': 0.0,        'backbone': True,  'decay': False},
+        {'params': hd_wd, 'lr': lr_head, 'weight_decay': weight_decay/10, 'backbone': False, 'decay': True},
+        {'params': hd_nd, 'lr': lr_head, 'weight_decay': 0.0,        'backbone': False, 'decay': False},
+    ]
+    # drop any empty groups
+    return [g for g in groups if len(g['params']) > 0]
+
+def set_bn_eval(m: nn.Module):
+    # Put all BatchNorm variants in eval mode to freeze running_mean/var updates
+    if isinstance(m, nn.modules.batchnorm._BatchNorm):
+        # m.eval()
+        pass
+
 # %% DELETING OLD PARAMETERS !!! 
 model = EfficientNet(n_classes=hyperVar['n_outputs'], pretrained=True, freeze_pretrained=False)
 
@@ -144,21 +189,31 @@ model = EfficientNet(n_classes=hyperVar['n_outputs'], pretrained=True, freeze_pr
 losses = []
 val_losses = []
 eps = []
+lr = [hyperVar['h_lr'], hyperVar['b_lr']]
 
-criterion = nn.SmoothL1Loss()  # Mean Absolute Error (MAE)
+criterion = nn.SmoothL1Loss()
+
+param_groups = build_param_groups(
+    model,
+    lr_head=hyperVar['h_lr'],
+    lr_body=hyperVar['b_lr'],
+    weight_decay=hyperVar['weight_decay']
+)
+
 optimizer = hyperVar['optimizer'](
-    model.parameters(), 
-    lr=hyperVar['lr'], 
-    weight_decay=hyperVar['weight_decay'],
+    param_groups,
+    betas=(hyperVar['beta1'], hyperVar['beta2']),
     amsgrad=hyperVar['amsgrad'],
 )
 
-def supervised_train(model, device="cpu"):
+def supervised_train(model, device="cpu"): 
     model.to(device)
     optimizer.zero_grad() 
 
     def _update(engine, batch):
         model.train()
+        if engine.state.epoch <= hyperVar['freeze_backbone_epochs']:
+            model.apply(set_bn_eval)  # Freeze BatchNorm running stats for the first epoch
         optimizer.zero_grad()  ## This zeroes out the gradient stored in "model".
         X_batch, Y_batch = batch
         X, Y = X_batch.to(device), Y_batch.to(device)
@@ -211,7 +266,6 @@ def supervised_evaluator(model, device="cpu"):
     return engine
 
 trainer = supervised_train(model, device=device)
-
 evaluator = supervised_evaluator(model, device=device)
 
 def score(engine):
@@ -223,6 +277,25 @@ handler = EarlyStopping(
     trainer=trainer
 )
 evaluator.add_event_handler(Events.COMPLETED, handler)
+
+# Add ReduceLROnPlateau scheduler that tracks validation loss (lower is better)
+scheduler = ReduceLROnPlateau(
+    optimizer,
+    mode='min',           # minimize validation loss
+    factor=hyperVar['lr_factor'],           # on plateau: lr <- lr * 0.2
+    patience=hyperVar['lr_patience'],           # wait 2 validation epochs with no improvement
+    threshold=1e-4,       # minimal change to qualify as improvement
+    cooldown=0,           # no cooldown
+    min_lr=hyperVar['min_lr'],          # do not go below this lr
+)
+
+def maybe_disable_wd(opt, threshold):
+    for pg in opt.param_groups:
+        if pg.get('decay', False) and pg['lr'] <= threshold and pg['weight_decay'] > 0.0:
+            pg['weight_decay'] = 0.0
+            pg['wd_disabled'] = True
+            print("Disabled weight decay for a param group (lr below threshold)")
+
 
 # Setup Model Checkpoint handler to save the best model
 import os
@@ -260,8 +333,34 @@ r2(
     device=device
 ).attach(evaluator, 'r2_score')
 
+# ---- Backbone freeze just for the first epoch (no optimizer rebuild) ----
+@trainer.on(Events.EPOCH_STARTED)
+def freeze_backbone_for_starting_epochs(engine):
+    if engine.state.epoch <= hyperVar['freeze_backbone_epochs']:
+        for pg in optimizer.param_groups:
+            if pg.get('backbone', False):
+                # Save originals once
+                pg.setdefault('orig_lr', pg['lr'])
+                pg.setdefault('orig_wd', pg['weight_decay'])
+                # Disable updates (and WD) for backbone during epoch 1
+                pg['lr'] = 0.0
+                pg['weight_decay'] = 0.0
+        print("Backbone frozen: lr=0, weight_decay=0; BN running stats frozen via eval()")
+
+
+
 @trainer.on(Events.EPOCH_COMPLETED)
 def run_validation_loss_track(engine):
+
+    if engine.state.epoch <= hyperVar['freeze_backbone_epochs']:
+        for pg in optimizer.param_groups:
+            if pg.get('backbone', False):
+                # Restore original lr and weight decay
+                pg['lr'] = pg.get('orig_lr', hyperVar['b_lr'])
+                pg['weight_decay'] = pg.get('orig_wd', hyperVar['weight_decay'])
+        print("Backbone unfrozen: restored lr and weight_decay; BN back to train() behavior")
+
+
     # Track losses for plotting
     eps.append(trainer.state.epoch)
     losses.append(trainer.state.output)
@@ -272,7 +371,11 @@ def run_validation_loss_track(engine):
     val_losses.append(val_loss)
     r2 = evaluator.state.metrics['r2_score']
     
+    scheduler.step(val_loss)  # Step the scheduler based on validation loss
+    maybe_disable_wd(optimizer, hyperVar['wd_off_below_lr'])
 
+
+    lr.append([pg['lr'] for pg in optimizer.param_groups])
     # Check if this is the best model so far
     current_score = score(evaluator)  # Negative because we want to maximize score (minimize loss)
     if current_score > best_model_info['score']:
@@ -284,6 +387,8 @@ def run_validation_loss_track(engine):
     print(f"Epoch {trainer.state.epoch} - Training Loss: {trainer.state.output:.4f}, "
           f"Validation Loss: {val_loss:.4f}, Best Epoch: {best_model_info['epoch']}")
     print("R2 Score:", r2)
+    print("Current LRs:", [f"{a:.2e}" for a in lr[-1]])
+
 
 
 ProgressBar().attach(trainer, output_transform=lambda x: {'loss': x})
@@ -330,7 +435,7 @@ trainer.run(dataloader, max_epochs=hyperVar['n_epochs'])
 
 # Restore the best model
 if best_model_info['params'] is not None:
-    print(f"Restoring best model from epoch {best_model_info['epoch']} with validation loss: {-best_model_info['score']:.4f}")
+    print(f"Restoring best model from epoch {best_model_info['epoch']} with R2: {best_model_info['score']:.4f}")
     model.load_state_dict(best_model_info['params'])
 else:
     print("Warning: No best model was found during training!")
@@ -380,6 +485,14 @@ plt.title("Loss vs. Epochs")
 plt.xlabel("Epochs")
 plt.ylabel("Loss")
 plt.legend()
+
+# # -------- LR plot
+# plt.figure()
+# plt.plot(eps, lr, label='Learning Rate')
+# plt.title("Learning Rate vs. Epochs")
+# plt.xlabel("Epochs")
+# plt.ylabel("Learning Rate")
+# plt.legend()
 
 # ---------- Signal plotting 
 n = hyperVar['n_plotted']
@@ -464,7 +577,7 @@ diffs = diffs.cpu().numpy() * 1e12  # Convert to pT for better readability
 # mask = np.all(np.abs(Y_pred_unscaled) < 1e-3, axis=1) & np.all(np.abs(Y_true_unscaled) < 1e-6, axis=1)
 # Y_pred_unscaled = Y_pred_unscaled[mask]
 
-intensities = Y_true_unscaled[:, 0] * 1e12;
+intensities = Y_true_unscaled[:, 0] * 1e12
 
 plt.figure(figsize=(10, 6))
 plt.grid(True)

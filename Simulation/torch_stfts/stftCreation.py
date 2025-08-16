@@ -42,7 +42,7 @@ if testing:
     n_tests = 5
     n_noise = 5
 else:
-    n_trains = 64 * 30  # = 1920
+    n_trains = 64 * 45  # = 2880
     n_validate = 64 * 3  # = 192
     n_tests = 64 * 3
     n_noise = 64
