@@ -9,9 +9,9 @@ from tqdm import trange
 
 # %% Parameters
 add_signals = False
-testing = False
+testing = True
 # Stft parameters
-length = 221
+length = 241
 '''
 Allowed lengths [210 -> 300]: {actual_l: length_inputted}
 [{217: 218}, {219: 220}, {221: 221}, {221: 222}, {227: 228}, {229: 229}, {229: 230}, 
@@ -39,7 +39,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if testing:
     n_trains = 20
     n_validate = 5
-    n_tests = 5
+    n_tests = 64 * 10
     n_noise = 5
 else:
     n_trains = 64 * 45  # = 2880

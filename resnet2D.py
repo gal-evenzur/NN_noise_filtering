@@ -34,7 +34,7 @@ hyperVar = {
     # Model parameters
     'same_scale': True,
     'n_outputs': 2,
-    'Bnumber': 0,  # 0 for B0, 1 for B1, 2 for B2
+    'Bnumber': 1,  # 0 for B0, 1 for B1, 2 for B2
 
 
     # Optimiser parameters
@@ -58,7 +58,7 @@ hyperVar = {
 
     # Plotting parameters
     'n_plotted': 10,
-    'start': 0,
+    'start': 100,
     'unscaled_plot': True,
             }
 
@@ -317,7 +317,13 @@ evaluator.add_event_handler(Events.COMPLETED, checkpoint_handler, {'model': mode
 best_model_info = {
     'params': None,
     'score': float('-inf'),  # Initialize with worst possible score (we want to maximize -loss)
-    'epoch': 0
+    'epoch': 0,
+    'history': {
+        'eps': [],
+        'losses': [],
+        'val_losses': [],
+        'lr': []
+    }
 }
 
 X_params, Y_params = validateSet.unscale()
@@ -348,7 +354,6 @@ def freeze_backbone_for_starting_epochs(engine):
         print("Backbone frozen: lr=0, weight_decay=0; BN running stats frozen via eval()")
 
 
-
 @trainer.on(Events.EPOCH_COMPLETED)
 def run_validation_loss_track(engine):
 
@@ -374,21 +379,26 @@ def run_validation_loss_track(engine):
     scheduler.step(val_loss)  # Step the scheduler based on validation loss
     maybe_disable_wd(optimizer, hyperVar['wd_off_below_lr'])
 
-
     lr.append([pg['lr'] for pg in optimizer.param_groups])
+    
     # Check if this is the best model so far
     current_score = score(evaluator)  # Negative because we want to maximize score (minimize loss)
     if current_score > best_model_info['score']:
         best_model_info['score'] = current_score
         best_model_info['params'] = {k: v.clone().detach() for k, v in model.state_dict().items()}
         best_model_info['epoch'] = trainer.state.epoch
+        best_model_info['history'] = {
+            'epochs': eps.copy(),
+            'train_losses': losses.copy(),
+            'val_losses': val_losses.copy(),
+            'learning_rates': lr.copy()
+        }
         print(f"New best model found at epoch {trainer.state.epoch}!")
     
     print(f"Epoch {trainer.state.epoch} - Training Loss: {trainer.state.output:.4f}, "
-          f"Validation Loss: {val_loss:.4f}, Best Epoch: {best_model_info['epoch']}")
+            f"Validation Loss: {val_loss:.4f}, Best Epoch: {best_model_info['epoch']}")
     print("R2 Score:", r2)
     print("Current LRs:", [f"{a:.2e}" for a in lr[-1]])
-
 
 
 ProgressBar().attach(trainer, output_transform=lambda x: {'loss': x})
@@ -416,9 +426,16 @@ if os.path.exists(checkpoint_dir):
                     print(f"Loading checkpoint: {checkpoint_path}")
                     # Load the model state
                     checkpoint = torch.load(checkpoint_path, map_location=device)
-                    model.load_state_dict(checkpoint)
-                      
-                    print(f"Resuming training...")
+                    model.load_state_dict(checkpoint['model_state_dict'])
+                    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                    # trainer.state.epoch = checkpoint['epoch']
+                    # losses = checkpoint['history']['train_losses']
+                    # eps = checkpoint['history']['epochs']
+                    # val_losses = checkpoint['history']['val_losses']
+                    # lr = checkpoint['history']['learning_rates']
+                    # print(f"Resuming training from epoch {trainer.state.epoch}...")
+
+
                     break
                 else:
                     print(f"Invalid choice. Please select a number between 0 and {len(files)}.")
