@@ -331,4 +331,57 @@ def score_function(engine, metric_name='loss'):
         # metric is a tensor, return the max of r2 (float) between the first and last items
         return max(metric[0], metric[-1]).item()
 
+def naive_solution(noisy_fft):
+    """
+    A naive solution to find the peaks in a noisy FFT signal.
+    Returns the second and third largest peaks in order of frequency appearance.
+    
+    Args:
+        noisy_fft (torch.Tensor): The noisy FFT signal.
+        Assume input of shape (batch_size, num_freq_bins, num_time_bins)
 
+    Returns:
+        torch.Tensor: The peak heights in order of frequency (left to right).
+    """
+    # Find indices of the maximum values in the noisy FFT signal
+    ordered_peaks = []
+    n_batches = noisy_fft.size(0)
+    
+    for i in range(n_batches):  # Iterate over each batch
+        # Get the mean over time dimension
+        fft_mean = noisy_fft[i].mean(dim=1)  # Average over time
+        
+        # Sort values in descending order and get both values and indices
+        sorted_values, sorted_indices = fft_mean.clone().detach().sort(descending=True)
+        
+        # Get indices of the second and third highest peaks
+        peak2_idx = sorted_indices[1].item()
+        peak3_idx = sorted_indices[2].item()
+        
+        # Get the actual values at these indices
+        peak2_val = fft_mean[peak2_idx]
+        peak3_val = fft_mean[peak3_idx]
+        
+        # Sort by frequency position (index), not by magnitude
+        if peak2_idx < peak3_idx:
+            ordered_peaks.append(torch.tensor([peak2_val, peak3_val], device=noisy_fft.device))
+        else:
+            ordered_peaks.append(torch.tensor([peak3_val, peak2_val], device=noisy_fft.device))
+    
+    return torch.stack(ordered_peaks)
+
+class NaiveSolutionWrapper(nn.Module):
+    def __init__(self, no_middle=True):
+        super().__init__()
+        self.no_middle = no_middle
+        
+    def forward(self, x):
+        # x is expected to be in shape [batch_size, 1, freq_bins, time_bins]
+        # Extract just the magnitude spectrogram (first channel)
+        x_mag = x.squeeze(1)  # Now [batch_size, freq_bins, time_bins]
+        
+        # Use the naive_solution function
+        peak_heights = naive_solution(x_mag)
+        
+        # Reshape output to match model output
+        return peak_heights

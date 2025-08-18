@@ -123,9 +123,9 @@ def make_noise(Time, n_power, p_perc, device='cpu'):
 def rand_train(I0, B0, F_B, noise_strength, device='cpu', batch_size=1):
     # Create random multipliers as tensors directly on the specified device
     I0_mult = torch.rand(batch_size, device=device) * 2 + 0.5  # uniform between 0.5 and 2.5
-    B0_mult = torch.rand(batch_size, device=device) * 6 + 0.4  # uniform between 0.4 and 6.4
+    B0_mult = torch.rand(batch_size, device=device) * 6 + 0.1  # uniform between 0.1 and 6.1
     F_B_offsets = torch.randint(-10, 10, (batch_size,), device=device)  # between F_B-10, F_B+10
-    noise_mult = torch.rand(batch_size, device=device) * 2.5 + 0.2  # uniform between 0.2 and 2.7
+    noise_mult = torch.rand(batch_size, device=device) * 3 + 0.2  # uniform between 0.2 and 3.2
     pink_percentage = torch.rand(batch_size, device=device) * 0.4 + 0.5
 
 
@@ -149,16 +149,16 @@ def rand_train(I0, B0, F_B, noise_strength, device='cpu', batch_size=1):
 
 def rand_test(I0, B0, F_B, noise_strength, device='cpu', batch_size=1):
     I0_mult = torch.rand(batch_size, device=device) * 1.5 + 0.8  # uniform between 0.8 and 2.3
-    B0_mult = torch.rand(batch_size, device=device) * 1 + 0.05  # uniform between 0.2 and 1.2
+    B0_mult = torch.rand(batch_size, device=device) * 1 + 0.05  # uniform between 0.05 and 1.05
     F_B_offsets = torch.randint(-5, 5, (batch_size,), device=device)  # between F_B-5, F_B+5
     noise_mult = torch.rand(batch_size, device=device)  # uniform between 1 and 2
     pink_percentage = torch.rand(batch_size, device=device) * 0.4 + 0.5
 
     # New for testing porpose
-    # I0_mult = torch.ones(batch_size, device=device)
+    I0_mult = torch.ones(batch_size, device=device)
     # B0_mult = torch.rand(batch_size, device=device) * 6 + 1     # uniform between 1 and 7
     # F_B_offsets = torch.zeros(batch_size, device=device)
-    noise_mult = torch.ones(batch_size, device=device)
+    noise_mult = torch.ones(batch_size, device=device) 
     pink_percentage = torch.zeros(batch_size, device=device)
 
 
@@ -458,3 +458,4 @@ def peak_heights(clear_signal, freqs, f_b, f_center, dir=False, no_middle=False)
         return peaks
     else:
         return result.squeeze()
+

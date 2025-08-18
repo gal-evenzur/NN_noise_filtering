@@ -60,7 +60,8 @@ hyperVar = {
     'n_plotted': 10,
     'start': 100,
     'unscaled_plot': True,
-            }
+    'plot_diff': 0.5 #pT difference
+}
 
 hyperVar['no_middle'] = True if hyperVar['n_outputs'] == 2 else False 
 
@@ -426,16 +427,7 @@ if os.path.exists(checkpoint_dir):
                     print(f"Loading checkpoint: {checkpoint_path}")
                     # Load the model state
                     checkpoint = torch.load(checkpoint_path, map_location=device)
-                    model.load_state_dict(checkpoint['model_state_dict'])
-                    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-                    # trainer.state.epoch = checkpoint['epoch']
-                    # losses = checkpoint['history']['train_losses']
-                    # eps = checkpoint['history']['epochs']
-                    # val_losses = checkpoint['history']['val_losses']
-                    # lr = checkpoint['history']['learning_rates']
-                    # print(f"Resuming training from epoch {trainer.state.epoch}...")
-
-
+                    model.load_state_dict(checkpoint)
                     break
                 else:
                     print(f"Invalid choice. Please select a number between 0 and {len(files)}.")
@@ -493,6 +485,32 @@ rel_errors = state.metrics["rel_error_3"]
 for i, rel_error in enumerate(rel_errors):
     print(f"Relative Error for output {i+1}: {rel_error:.4e}")
 print("R2 Score for output :", state.metrics['r2_score'])
+
+# Naive model
+# Create the naive solution model
+naive_model = NaiveSolutionWrapper(no_middle=hyperVar['no_middle'])
+naive_model.to(device)
+
+# Create a separate evaluator for the naive solution
+naive_evaluator = supervised_evaluator(naive_model, device=device)
+
+# Attach the same metrics as used for the regular model
+MeanRelativeError(
+    output_transform=transform_func, device=device
+).attach(naive_evaluator, 'rel_error_3')
+
+PeakComparison(
+    output_transform=transform_func, device=device
+).attach(naive_evaluator, 'peak_comparison')
+
+# Run evaluation on the test set
+print("Evaluating naive solution...")
+naive_state = naive_evaluator.run(test_loader)
+
+# Print results
+rel_errors = naive_state.metrics["rel_error_3"]
+for i, rel_error in enumerate(rel_errors):
+    print(f"Relative Error for output {i+1}: {rel_error:.4e}")
 # %% -------Plotting evaluation--------
 # ---------- Loss plot
 plt.figure()
@@ -503,13 +521,7 @@ plt.xlabel("Epochs")
 plt.ylabel("Loss")
 plt.legend()
 
-# # -------- LR plot
-# plt.figure()
-# plt.plot(eps, lr, label='Learning Rate')
-# plt.title("Learning Rate vs. Epochs")
-# plt.xlabel("Epochs")
-# plt.ylabel("Learning Rate")
-# plt.legend()
+
 
 # ---------- Signal plotting 
 n = hyperVar['n_plotted']
@@ -520,75 +532,86 @@ fig.text(0.6, 0.01, 'f [Hz]', ha='center', fontsize=12)
 fig.text(0.01, 0.5, 'FFT', ha='center', rotation='vertical', fontsize=12)
 import matplotlib.lines as mlines
 
-data_handle = mlines.Line2D([], [], color='black', marker='o', linestyle='None', label='Data')
-pred_handle = mlines.Line2D([], [], color='blue', marker='o', linestyle='None', label='Prediction')
 
-fig.legend(handles=[pred_handle, data_handle],
-           loc='upper center', ncol=3, fontsize=10, frameon=False)
+def draw_signals(fig, set, model, start, n):
 
-for i_ in range(start,start+n):
-    X_test,Y_test = set[i_]
-    clean_sig = set.get_clean_sig(i_)
-    peak_freqs = set.get_peak_freqs(i_)
+    data_handle = mlines.Line2D([], [], color='black', marker='o', linestyle='None', label='Data')
+    pred_handle = mlines.Line2D([], [], color='blue', marker='o', linestyle='None', label='Prediction')
 
-    X_test = X_test.unsqueeze(0)  # Reshape to [1, channels, length] for ResNet
-    Y_pred = model(X_test.to(device))
+    fig.legend(handles=[pred_handle, data_handle],
+            loc='upper center', ncol=3, fontsize=10, frameon=False)
 
-    X_test_plot = X_test.squeeze()
-    Y_test_plot = Y_test
-    Y_pred_plot = Y_pred
+    for i_ in range(start,start+n):
+        X_test,Y_test = set[i_]
+        clean_sig = set.get_clean_sig(i_)
+        peak_freqs = set.get_peak_freqs(i_)
 
-    if hyperVar['unscaled_plot']:
-        X_test_plot = unscale_tensor(X_test_plot, X_params)
-        Y_test_plot = unscale_tensor(Y_test_plot, Y_params)
-        Y_pred_plot = unscale_tensor(Y_pred_plot, Y_params)
+        X_test = X_test.unsqueeze(0)  # Reshape to [1, channels, length] for ResNet
+        Y_pred = model(X_test.to(device))
 
-    Y_pred_plot = Y_pred_plot.cpu().detach().numpy()
-    Y_test_plot = Y_test_plot.cpu().detach().numpy()
-    X_test_plot = X_test_plot.cpu().detach().numpy()
+        X_test_plot = X_test.squeeze()
+        Y_test_plot = Y_test
+        Y_pred_plot = Y_pred
+
+        if hyperVar['unscaled_plot']:
+            X_test_plot = unscale_tensor(X_test_plot, X_params)
+            Y_test_plot = unscale_tensor(Y_test_plot, Y_params)
+            Y_pred_plot = unscale_tensor(Y_pred_plot, Y_params)
+
+        Y_pred_plot = Y_pred_plot.cpu().detach().numpy()
+        Y_test_plot = Y_test_plot.cpu().detach().numpy()
+        X_test_plot = X_test_plot.cpu().detach().numpy()
 
 
-    i = i_%n
+        i = i_%n
 
-    sigPlot[i].scatter(peak_freqs, Y_test_plot,
-                       edgecolors='black',
-                       facecolors="none",
-                       s=100,
-                       zorder=5,
-                       linewidths=2,
-                       label='Real peak heights')
+        sigPlot[i].scatter(peak_freqs, Y_test_plot,
+                        edgecolors='black',
+                        facecolors="none",
+                        s=100,
+                        zorder=5,
+                        linewidths=2,
+                        label='Real peak heights')
 
-    sigPlot[i].scatter(peak_freqs, Y_pred_plot,
-                       edgecolors='blue',
-                       facecolors="none",
-                       s=100,
-                       zorder=5,
-                       linewidths=2,
-                       label='Predicted peak heights')
+        sigPlot[i].scatter(peak_freqs, Y_pred_plot,
+                        edgecolors='blue',
+                        facecolors="none",
+                        s=100,
+                        zorder=5,
+                        linewidths=2,
+                        label='Predicted peak heights')
 
-    if hyperVar['unscaled_plot']:
-        sigPlot[i].set_yscale('log')
+        if hyperVar['unscaled_plot']:
+            sigPlot[i].set_yscale('log')
 
-    sigPlot[i].plot(f, X_test_plot[:,0], "g*")
-    sigPlot[i].plot(f, clean_sig[:,0], "r.-")
+        sigPlot[i].plot(f, X_test_plot[:,0], "g*")
+        sigPlot[i].plot(f, clean_sig[:,0], "r.-")
 
-    # Add a title (number) to each column's top subplot
-    sigPlot[i].set_title(f"n: {i}\n B0: {Y_test_plot[0]:.2e}")
+        # Add a title (number) to each column's top subplot
+        sigPlot[i].set_title(f"n: {i}\n B0: {Y_test_plot[0]:.2e}")
 
-    # xbor = [0, 4]
-    # sigPlot[i].set_xlim(xbor[0],xbor[1])
-#    sigPlot[i].set_xticks(np.linspace(xbor[0], xbor[1], 5))  # 11 ticks between 1950 and 2050
-#    sigPlot[i].set_xticklabels([f"{xbor[0]:.0f}", "", "", "", f"{xbor[1]:.0f}"])
+        # xbor = [0, 4]
+        # sigPlot[i].set_xlim(xbor[0],xbor[1])
+    #    sigPlot[i].set_xticks(np.linspace(xbor[0], xbor[1], 5))  # 11 ticks between 1950 and 2050
+    #    sigPlot[i].set_xticklabels([f"{xbor[0]:.0f}", "", "", "", f"{xbor[1]:.0f}"])
+
+draw_signals(fig, set, model, start, n)
 
 # ---------- Mean Deviation Errors for each B0
 
 
 plt.tight_layout(rect=[0.03, 0.03, 1, 0.88])
 
-Y_true_unscaled, Y_pred_unscaled, diffs = state.metrics["peak_comparison"]
-Y_true_unscaled = Y_true_unscaled.cpu().numpy()
-Y_pred_unscaled = Y_pred_unscaled.cpu().numpy()
-diffs = diffs.cpu().numpy() * 1e12  # Convert to pT for better readability
+def extract_diffs(state):
+    Y_true_unscaled, Y_pred_unscaled, diffs = state.metrics["peak_comparison"]
+    Y_true_unscaled = Y_true_unscaled.cpu().numpy()
+    Y_pred_unscaled = Y_pred_unscaled.cpu().numpy()
+    diffs = diffs.cpu().numpy() * 1e12  # Convert to pT for better readability
+    return Y_true_unscaled, Y_pred_unscaled, diffs
+
+Y_true_unscaled, Y_pred_unscaled, diffs = extract_diffs(state)
+
+_, Y_pred_naive, diffs_naive = extract_diffs(naive_state)
 
 # Mask values which are greater than 1e-3
 # mask = np.all(np.abs(Y_pred_unscaled) < 1e-3, axis=1) & np.all(np.abs(Y_true_unscaled) < 1e-6, axis=1)
@@ -596,54 +619,71 @@ diffs = diffs.cpu().numpy() * 1e12  # Convert to pT for better readability
 
 intensities = Y_true_unscaled[:, 0] * 1e12
 
-plt.figure(figsize=(10, 6))
-plt.grid(True)
+fig, ax = plt.subplots(2, 1, figsize=(10, 6))
 
-# plt.yscale('symlog', linthresh=1e-2)  # Log scale for better visibility of differences
-# plt.plot(intensities, diffs[:, 1], 'b.', label='Center Peak')
-plt.plot(intensities, diffs[:, 0], 'r.', label='Left Peak')
-plt.plot(intensities, diffs[:, -1], 'g.',label='Right Peak')
-for i in range(len(intensities)): # Connect left and right dots for each intensity
-    plt.plot([intensities[i], intensities[i]], [diffs[i, 0], diffs[i, -1]], 'k-', alpha=0.5)
-plt.title("Mean Deviation Error per Intensity")
-plt.xlabel("Intensity (B0) [T]")
-plt.ylabel("Mean Deviation Error [pT]")
-plt.legend()
-
-# --------- Line fit
-peak_names = ['Left', 'Center', 'Right']
-if hyperVar['n_outputs'] == 2:
-    peak_names = ['Left', 'Right']
-fig, axes = plt.subplots(1, hyperVar['n_outputs'], figsize=(18, 6))
-fig.suptitle('Predicted vs. True Peak Heights', fontsize=16)
-
-for i, (ax, name) in enumerate(zip(axes, peak_names)):
-    true_vals = Y_true_unscaled[:, i] * 1e12 # Convert to pT
-    pred_vals = Y_pred_unscaled[:, i] * 1e12
-
-    # Scatter plot
-    ax.scatter(true_vals, pred_vals, alpha=0.5, label='Predictions')
-
-    # Linear fit
-    coeffs = np.polyfit(true_vals, pred_vals, 1)
-    poly = np.poly1d(coeffs)
-    fit_line = poly(true_vals)
-
-    r_squared = np.corrcoef(true_vals, pred_vals)[0, 1] ** 2
-
-    ax.plot(true_vals, fit_line, 'r-', label=f'Linear Fit (y={coeffs[0]:.2f}x + {coeffs[1]:.2e}, R²={r_squared:.2f})')
-
-    ax.set_title(f'{name} Peak')
-    ax.set_xlabel('True Height [pT]')
-    ax.set_ylabel('Predicted Height [pT]')
-    ax.legend()
+def diffs_graph(intensities, diffs, ax):
     ax.grid(True)
 
-plt.tight_layout(rect=[0, 0, 1, 0.96])
+    # plt.yscale('symlog', linthresh=1e-2)  # Log scale for better visibility of differences
+    # plt.plot(intensities, diffs[:, 1], 'b.', label='Center Peak')
+    ax.plot(intensities, diffs[:, 0], 'r.', label='Left Peak')
+    ax.plot(intensities, diffs[:, -1], 'g.',label='Right Peak')
+    for i in range(len(intensities)): # Connect left and right dots for each intensity
+        ax.plot([intensities[i], intensities[i]], [diffs[i, 0], diffs[i, -1]], 'k-', alpha=0.5)
+    ax.set_title("Mean Deviation Error per Intensity")
+    ax.set_xlabel("Intensity (B0) [T]")
+    ax.set_ylabel("Mean Deviation Error [pT]")
+    ax.legend()
+
+diffs_graph(intensities, diffs, ax[0])
+diffs_graph(intensities, diffs_naive, ax[1])
+
+
+# --------- Line fit
+
+def line_fit_graph(True_vals, Predicts, axes, name='Model Predictions'):
+    peak_names = ['Left', 'Center', 'Right']
+    if hyperVar['n_outputs'] == 2:
+        peak_names = ['Left', 'Right']
+    for i, (ax, name) in enumerate(zip(axes, peak_names)):
+        true_vals = True_vals[:, i] * 1e12 # Convert to pT
+        pred_vals = Predicts[:, i] * 1e12
+
+        # Scatter plot
+        ax.scatter(true_vals, pred_vals, alpha=0.5, label='Predictions')
+
+        # Linear fit
+        coeffs = np.polyfit(true_vals, pred_vals, 1)
+        poly = np.poly1d(coeffs)
+        fit_line = poly(true_vals)
+
+        r_squared = np.corrcoef(true_vals, pred_vals)[0, 1] ** 2
+
+        ax.plot(true_vals, fit_line, 'r-', label=f'Linear Fit (y={coeffs[0]:.2f}x + {coeffs[1]:.2e}, R²={r_squared:.2f})')
+
+        # Plotting 1pT difference lines
+        if hyperVar['plot_diff'] > 0:
+            ax.plot(true_vals, true_vals + hyperVar['plot_diff'], 'g--', label=f'{hyperVar['plot_diff']} pT Difference', alpha=0.5)
+            ax.plot(true_vals, true_vals - hyperVar['plot_diff'], 'g--', label=f'{hyperVar['plot_diff']} pT Difference', alpha=0.5)
+
+        ax.set_title(f'{name}', fontsize=16)
+        ax.set_xlabel('True Height [pT]')
+        ax.set_ylabel('Predicted Height [pT]')
+        ax.legend()
+        ax.grid(True)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+fig, axes = plt.subplots(2, hyperVar['n_outputs'], figsize=(18, 6))
+fig.suptitle('Predicted vs. True Peak Heights', fontsize=16)
+
+# on top axes: line fits
+line_fit_graph(Y_true_unscaled, Y_pred_unscaled, axes[0])
+
+# on bottom axes: line fit for naives
+line_fit_graph(Y_true_unscaled, Y_pred_naive, axes[1], name='Naive Predictions')
 
 # ----------- Noise Plot
-n = hyperVar['n_plotted']
-start = hyperVar['start']
 
 noiseSet = SignalDataset('Data/data_stft.h5', split="noise", resnet=True, same_scale=same_scale, no_middle=no_middle)
 
