@@ -9,7 +9,7 @@ from tqdm import trange
 
 # %% Parameters
 add_signals = False
-testing = True
+testing = False
 # Stft parameters
 length = 241
 '''
@@ -39,7 +39,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if testing:
     n_trains = 20
     n_validate = 5
-    n_tests = 64 * 10
+    n_tests = 64 * 3
     n_noise = 5
 else:
     n_trains = 64 * 45  # = 2880
